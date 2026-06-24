@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Vista previa WhatsApp – Mis Ventas{% endblock %}
+
+{% block content %}
+<h5 class="fw-bold mb-3">
+  <i class="bi bi-whatsapp me-2" style="color:#25D366;"></i>Vista previa del mensaje
+</h5>
+
+{% if not ofertas %}
+<div class="alert alert-info">
+  <i class="bi bi-info-circle me-1"></i>
+  No hay productos en oferta activa hoy. Marcá algunos productos como "en oferta" para generar el mensaje.
+</div>
+{% else %}
+
+<!-- Productos en oferta hoy -->
+<div class="form-card mb-4">
+  <h6 class="fw-semibold mb-3">
+    <i class="bi bi-tag-fill text-danger me-1"></i>Productos en oferta hoy ({{ ofertas|length }})
+  </h6>
+  <div class="row g-2">
+    {% for p in ofertas %}
+    <div class="col-6 col-md-4">
+      <div class="card border-0 bg-light p-2 rounded-3">
+        {% if p.foto %}
+        <img src="{{ url_for('uploaded_file', filename=p.foto) }}"
+             class="rounded mb-1" style="width:100%; height:80px; object-fit:cover;"
+             alt="{{ p.nombre }}">
+        {% endif %}
+        <div class="fw-semibold small">{{ p.nombre }}</div>
+        <div class="text-primary fw-bold small">${{ "%.2f"|format(p.precio) }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Vista previa del mensaje -->
+<div class="form-card mb-4">
+  <h6 class="fw-semibold mb-3">
+    <i class="bi bi-chat-dots me-1"></i>Mensaje generado
+  </h6>
+  <div class="wa-screen mb-3">
+    <div class="wa-bubble">{{ mensaje }}</div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold small">Editar mensaje (opcional)</label>
+    <textarea id="mensajeEditable" class="form-control font-monospace"
+              rows="10">{{ mensaje }}</textarea>
+  </div>
+
+  <button class="btn btn-outline-secondary btn-sm mb-3" onclick="actualizarBurbuja()">
+    <i class="bi bi-eye me-1"></i>Actualizar vista previa
+  </button>
+</div>
+
+<!-- Enviar a clientes -->
+<div class="form-card">
+  <h6 class="fw-semibold mb-3">
+    <i class="bi bi-send me-1"></i>Enviar a un cliente
+  </h6>
+
+  {% if clientes %}
+  <div class="mb-3">
+    <input type="search" id="buscarCliente" class="form-control mb-2"
+           placeholder="Buscar cliente…">
+    <div style="max-height:260px; overflow-y:auto;" id="listaClientes">
+      {% for c in clientes %}
+      <div class="cliente-wa d-flex align-items-center justify-content-between
+                  py-2 px-1 border-bottom">
+        <div>
+          <div class="fw-semibold small">{{ c.nombre }}</div>
+          <div class="text-muted" style="font-size:.75rem;">{{ c.celular }}</div>
+        </div>
+        <button class="btn btn-sm" style="background:#25D366; color:#fff; border:none;"
+                onclick="enviarWA('{{ c.celular }}')">
+          <i class="bi bi-whatsapp"></i> Enviar
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <p class="text-muted small">
+    Aún no tenés clientes activos.
+    <a href="{{ url_for('cliente_nuevo') }}">Agregá uno</a>.
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function getMensaje() {
+  return document.getElementById('mensajeEditable')?.value || '';
+}
+
+function actualizarBurbuja() {
+  document.querySelector('.wa-bubble').textContent = getMensaje();
+}
+
+function enviarWA(celular) {
+  const msg = getMensaje();
+  const num = celular.replace(/\D/g, '');
+  const url = `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+}
+
+const buscarCliente = document.getElementById('buscarCliente');
+if (buscarCliente) {
+  buscarCliente.addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('.cliente-wa').forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+}
+</script>
+{% endblock %}

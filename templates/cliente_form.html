@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{% if cliente %}Editar cliente{% else %}Nuevo cliente{% endif %} – Mis Ventas{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3 gap-2">
+  <a href="{{ url_for('clientes') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h5 class="fw-bold mb-0">
+    {% if cliente %}Editar cliente{% else %}Nuevo cliente{% endif %}
+  </h5>
+</div>
+
+<form method="post" class="form-card">
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold">Nombre <span class="text-danger">*</span></label>
+    <input type="text" name="nombre" class="form-control"
+           value="{{ cliente.nombre if cliente else '' }}"
+           placeholder="Ej: María González" required autofocus>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold">
+      Celular con código de país <span class="text-danger">*</span>
+    </label>
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-telephone"></i></span>
+      <input type="tel" name="celular" class="form-control"
+             value="{{ cliente.celular if cliente else '' }}"
+             placeholder="+54 9 11 1234-5678" required>
+    </div>
+    <div class="form-text">
+      Incluí el código de país para poder enviar mensajes por WhatsApp.<br>
+      Ej: <strong>+54</strong> para Argentina, <strong>+1</strong> para EE.UU.
+    </div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold">Notas</label>
+    <textarea name="notas" class="form-control" rows="2"
+              placeholder="Ej: Prefiere entrega a domicilio">{{ cliente.notas if cliente else '' }}</textarea>
+  </div>
+
+  <div class="mb-4">
+    <div class="form-check form-switch">
+      <input type="checkbox" name="activo" id="activo" class="form-check-input"
+             {% if not cliente or cliente.activo %}checked{% endif %}>
+      <label class="form-check-label fw-semibold" for="activo">Cliente activo</label>
+    </div>
+  </div>
+
+  <div class="d-grid gap-2">
+    <button type="submit" class="btn btn-success btn-lg">
+      <i class="bi bi-check-lg me-1"></i>
+      {% if cliente %}Guardar cambios{% else %}Agregar cliente{% endif %}
+    </button>
+    <a href="{{ url_for('clientes') }}" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Productos – Mis Ventas{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h5 class="fw-bold mb-0">
+    <i class="bi bi-box-seam me-2 text-primary"></i>Productos
+  </h5>
+  <a href="{{ url_for('producto_nuevo') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>Nuevo
+  </a>
+</div>
+
+{% if not productos %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-box-seam" style="font-size:3rem;"></i>
+  <p class="mt-2">Todavía no tenés productos. ¡Agregá el primero!</p>
+</div>
+{% else %}
+
+<!-- Filtro rápido en mobile -->
+<div class="btn-group btn-group-sm w-100 mb-3" id="filtroBtn" role="group">
+  <button type="button" class="btn btn-outline-secondary active" data-filter="todos">Todos</button>
+  <button type="button" class="btn btn-outline-secondary" data-filter="activos">Activos</button>
+  <button type="button" class="btn btn-outline-secondary" data-filter="oferta">En oferta</button>
+</div>
+
+<div class="row g-3" id="gridProductos">
+  {% for p in productos %}
+  <div class="col-6 col-md-4 producto-item
+    {% if not p.activo %}inactivo{% endif %}
+    {% if p.oferta_hoy %}oferta{% endif %}">
+    <div class="card product-card h-100 {% if not p.activo %}opacity-50{% endif %}">
+      <div class="position-relative">
+        {% if p.foto %}
+        <img src="{{ url_for('uploaded_file', filename=p.foto) }}"
+             class="product-img" alt="{{ p.nombre }}" loading="lazy">
+        {% else %}
+        <div class="product-img-placeholder">
+          <i class="bi bi-image"></i>
+        </div>
+        {% endif %}
+        {% if p.oferta_hoy %}
+        <span class="badge bg-danger badge-oferta">
+          <i class="bi bi-tag-fill me-1"></i>OFERTA
+        </span>
+        {% endif %}
+      </div>
+      <div class="card-body p-2">
+        <p class="fw-semibold mb-0 small lh-sm">{{ p.nombre }}</p>
+        {% if p.descripcion %}
+        <p class="text-muted mb-1" style="font-size:.75rem;">{{ p.descripcion }}</p>
+        {% endif %}
+        <p class="fw-bold text-primary mb-2">${{ "%.2f"|format(p.precio) }}</p>
+
+        <div class="d-flex gap-1 flex-wrap">
+          <a href="{{ url_for('producto_editar', pid=p.id) }}"
+             class="btn btn-outline-secondary btn-sm flex-fill">
+            <i class="bi bi-pencil"></i>
+          </a>
+          <form method="post" action="{{ url_for('toggle_oferta', pid=p.id) }}" class="flex-fill">
+            <button type="submit"
+              class="btn btn-sm w-100 {% if p.en_oferta %}btn-warning{% else %}btn-outline-warning{% endif %}"
+              title="{% if p.en_oferta %}Quitar oferta{% else %}Poner en oferta{% endif %}">
+              <i class="bi bi-tag{% if not p.en_oferta %}-fill{% endif %}"></i>
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('producto_borrar', pid=p.id) }}"
+                onsubmit="return confirm('¿Borrar {{ p.nombre }}?')" class="flex-fill">
+            <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+              <i class="bi bi-trash"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('#filtroBtn button').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('#filtroBtn button').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    const f = this.dataset.filter;
+    document.querySelectorAll('.producto-item').forEach(el => {
+      if (f === 'todos') { el.style.display = ''; }
+      else if (f === 'activos') { el.style.display = el.classList.contains('inactivo') ? 'none' : ''; }
+      else if (f === 'oferta') { el.style.display = el.classList.contains('oferta') ? '' : 'none'; }
+    });
+  });
+});
+</script>
+{% endblock %}

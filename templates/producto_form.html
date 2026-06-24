@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}{% if producto %}Editar producto{% else %}Nuevo producto{% endif %} – Mis Ventas{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3 gap-2">
+  <a href="{{ url_for('productos') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h5 class="fw-bold mb-0">
+    {% if producto %}Editar producto{% else %}Nuevo producto{% endif %}
+  </h5>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="form-card">
+
+  <!-- Foto actual -->
+  {% if producto and producto.foto %}
+  <div class="mb-3 text-center">
+    <img src="{{ url_for('uploaded_file', filename=producto.foto) }}"
+         id="previewImg"
+         class="img-fluid rounded shadow-sm" style="max-height:200px; object-fit:cover;"
+         alt="Foto actual">
+    <p class="text-muted small mt-1">Foto actual (subí una nueva para reemplazarla)</p>
+  </div>
+  {% else %}
+  <div class="mb-3 text-center">
+    <div id="previewPlaceholder" class="product-img-placeholder rounded"
+         style="height:160px; max-width:300px; margin:0 auto;">
+      <i class="bi bi-image"></i>
+    </div>
+    <img id="previewImg" class="img-fluid rounded shadow-sm d-none"
+         style="max-height:200px; object-fit:cover;" alt="Vista previa">
+  </div>
+  {% endif %}
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold">Foto del producto</label>
+    <input type="file" name="foto" id="fotoInput" accept="image/*"
+           class="form-control" capture="environment">
+    <div class="form-text">JPG, PNG o WEBP. Tamaño máximo recomendado: 5 MB.</div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold">Nombre <span class="text-danger">*</span></label>
+    <input type="text" name="nombre" class="form-control"
+           value="{{ producto.nombre if producto else '' }}"
+           placeholder="Ej: Empanadas de carne" required autofocus>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold">Descripción corta</label>
+    <textarea name="descripcion" class="form-control" rows="2"
+              placeholder="Ej: Docena, rellenas con cebolla y huevo">{{ producto.descripcion if producto else '' }}</textarea>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold">Precio <span class="text-danger">*</span></label>
+    <div class="input-group">
+      <span class="input-group-text">$</span>
+      <input type="number" name="precio" class="form-control"
+             value="{{ producto.precio if producto else '' }}"
+             step="0.01" min="0" placeholder="0.00" required>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="mb-2">
+    <div class="form-check form-switch">
+      <input type="checkbox" name="en_oferta" id="enOferta" class="form-check-input"
+             {% if producto and producto.en_oferta %}checked{% endif %}>
+      <label class="form-check-label fw-semibold" for="enOferta">
+        <i class="bi bi-tag-fill text-warning me-1"></i>En oferta
+      </label>
+    </div>
+  </div>
+
+  <div id="ofertaFechas" class="{% if not (producto and producto.en_oferta) %}d-none{% endif %}">
+    <div class="row g-2 mb-2">
+      <div class="col-6">
+        <label class="form-label small">Desde</label>
+        <input type="date" name="oferta_desde" class="form-control form-control-sm"
+               value="{{ producto.oferta_desde if producto else '' }}">
+      </div>
+      <div class="col-6">
+        <label class="form-label small">Hasta</label>
+        <input type="date" name="oferta_hasta" class="form-control form-control-sm"
+               value="{{ producto.oferta_hasta if producto else '' }}">
+      </div>
+    </div>
+    <p class="text-muted small mb-0">Dejá las fechas vacías para que la oferta no tenga límite.</p>
+  </div>
+
+  <hr>
+
+  <div class="mb-4">
+    <div class="form-check form-switch">
+      <input type="checkbox" name="activo" id="activo" class="form-check-input"
+             {% if not producto or producto.activo %}checked{% endif %}>
+      <label class="form-check-label fw-semibold" for="activo">Producto activo</label>
+    </div>
+  </div>
+
+  <div class="d-grid gap-2">
+    <button type="submit" class="btn btn-primary btn-lg">
+      <i class="bi bi-check-lg me-1"></i>
+      {% if producto %}Guardar cambios{% else %}Crear producto{% endif %}
+    </button>
+    <a href="{{ url_for('productos') }}" class="btn btn-outline-secondary">Cancelar</a>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Mostrar/ocultar fechas de oferta
+document.getElementById('enOferta').addEventListener('change', function() {
+  document.getElementById('ofertaFechas').classList.toggle('d-none', !this.checked);
+});
+
+// Vista previa de imagen antes de subir
+document.getElementById('fotoInput').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById('previewImg');
+    const ph = document.getElementById('previewPlaceholder');
+    img.src = e.target.result;
+    img.classList.remove('d-none');
+    if (ph) ph.classList.add('d-none');
+  };
+  reader.readAsDataURL(file);
+});
+</script>
+{% endblock %}
