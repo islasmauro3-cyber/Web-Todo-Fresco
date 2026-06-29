@@ -1,11 +1,15 @@
 import os
+import csv
+import io
 import uuid
 from datetime import datetime, date
 from functools import wraps
 
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, flash, send_from_directory, abort
+    session, flash, send_from_directory, abort, Response
 )
 from werkzeug.utils import secure_filename
 from PIL import Image
@@ -356,6 +360,231 @@ def _generar_mensaje(ofertas):
         lineas.append("")
     lineas.append("¡Contactame para hacer tu pedido! 😊")
     return "\n".join(lineas)
+
+
+# ── Importación masiva ────────────────────────────────────────────────────────
+
+VERDADERO = {"si", "sí", "yes", "1", "true", "verdadero", "v", "s", "y"}
+
+
+def _parsear_en_oferta(val):
+    return 1 if str(val).strip().lower() in VERDADERO else 0
+
+
+def _parsear_precio(val):
+    try:
+        return float(str(val).strip().replace(",", ".").replace("$", "").replace(" ", ""))
+    except (ValueError, TypeError):
+        return None
+
+
+def _filas_excel(file_bytes):
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+    return rows
+
+
+def _filas_csv(file_bytes):
+    text = file_bytes.decode("utf-8-sig")
+    reader = csv.reader(io.StringIO(text))
+    return list(reader)
+
+
+def _procesar_filas(rows):
+    """Devuelve (productos_validos, errores) a partir de las filas crudas (incluyendo cabecera)."""
+    if not rows:
+        return [], ["El archivo está vacío."]
+
+    # Normalizar cabecera
+    header = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
+
+    col_map = {}
+    for i, h in enumerate(header):
+        if "nombre" in h:
+            col_map["nombre"] = i
+        elif "descrip" in h:
+            col_map["descripcion"] = i
+        elif "precio" in h:
+            col_map["precio"] = i
+        elif "oferta" in h:
+            col_map["en_oferta"] = i
+
+    faltantes = [c for c in ("nombre", "precio") if c not in col_map]
+    if faltantes:
+        return [], [f"Columnas obligatorias no encontradas: {', '.join(faltantes)}. "
+                    f"Verificá que la primera fila sea el encabezado."]
+
+    productos, errores = [], []
+    for n, row in enumerate(rows[1:], start=2):
+        if all(c is None or str(c).strip() == "" for c in row):
+            continue  # fila vacía
+
+        nombre = str(row[col_map["nombre"]] or "").strip()
+        descripcion = str(row[col_map.get("descripcion", -1)] or "").strip() if "descripcion" in col_map else ""
+        precio_raw = row[col_map["precio"]]
+        en_oferta_raw = row[col_map.get("en_oferta", -1)] if "en_oferta" in col_map else ""
+
+        if not nombre:
+            errores.append(f"Fila {n}: nombre vacío — se omitió.")
+            continue
+
+        precio = _parsear_precio(precio_raw)
+        if precio is None:
+            errores.append(f"Fila {n} ({nombre!r}): precio inválido ({precio_raw!r}) — se omitió.")
+            continue
+
+        productos.append({
+            "nombre": nombre,
+            "descripcion": descripcion,
+            "precio": precio,
+            "en_oferta": _parsear_en_oferta(en_oferta_raw),
+        })
+
+    return productos, errores
+
+
+@app.route("/productos/importar", methods=["GET", "POST"])
+@login_required
+def productos_importar():
+    if request.method == "GET":
+        return render_template("importar_productos.html")
+
+    file = request.files.get("archivo")
+    if not file or not file.filename:
+        flash("Seleccioná un archivo.", "danger")
+        return render_template("importar_productos.html")
+
+    ext = file.filename.rsplit(".", 1)[-1].lower()
+    if ext not in ("xlsx", "xls", "csv"):
+        flash("Formato no soportado. Usá .xlsx o .csv.", "danger")
+        return render_template("importar_productos.html")
+
+    file_bytes = file.read()
+    try:
+        rows = _filas_excel(file_bytes) if ext in ("xlsx", "xls") else _filas_csv(file_bytes)
+    except Exception as e:
+        flash(f"No se pudo leer el archivo: {e}", "danger")
+        return render_template("importar_productos.html")
+
+    productos, errores = _procesar_filas(rows)
+
+    if not productos and not errores:
+        flash("El archivo no contiene filas con datos.", "warning")
+        return render_template("importar_productos.html")
+
+    if not productos:
+        for err in errores:
+            flash(err, "danger")
+        return render_template("importar_productos.html")
+
+    # Insertar en la base de datos
+    db = get_db()
+    ids_nuevos = []
+    for p in productos:
+        cur = db.execute(
+            """INSERT INTO productos (nombre, descripcion, precio, en_oferta, activo)
+               VALUES (?,?,?,?,1)""",
+            (p["nombre"], p["descripcion"], p["precio"], p["en_oferta"]),
+        )
+        ids_nuevos.append(cur.lastrowid)
+    db.commit()
+
+    # Traer los productos recién insertados para mostrarlos
+    placeholders = ",".join("?" * len(ids_nuevos))
+    nuevos = [dict(r) for r in db.execute(
+        f"SELECT * FROM productos WHERE id IN ({placeholders}) ORDER BY nombre",
+        ids_nuevos,
+    ).fetchall()]
+    db.close()
+
+    for err in errores:
+        flash(err, "warning")
+
+    flash(f"Se importaron {len(productos)} productos correctamente.", "success")
+    return render_template("importar_resultado.html", productos=nuevos, errores=errores)
+
+
+@app.route("/productos/plantilla")
+@login_required
+def productos_plantilla():
+    """Genera y descarga el archivo Excel de plantilla."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Productos"
+
+    # Estilos
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="0D6EFD")
+    center = Alignment(horizontal="center", vertical="center")
+    thin = Side(style="thin", color="CCCCCC")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    headers = ["nombre", "descripcion", "precio", "en_oferta"]
+    labels  = ["Nombre *", "Descripción", "Precio *", "En oferta (sí/no)"]
+    widths  = [30, 40, 14, 20]
+
+    for col, (label, width) in enumerate(zip(labels, widths), start=1):
+        cell = ws.cell(row=1, column=col, value=label)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center
+        cell.border = border
+        ws.column_dimensions[cell.column_letter].width = width
+
+    ws.row_dimensions[1].height = 22
+
+    # Filas de ejemplo
+    ejemplos = [
+        ("Empanadas de carne (docena)", "Rellenas con cebolla y huevo", 2500, "no"),
+        ("Medialunas (bandeja x6)",     "Con manteca, crocantes",       1200, "sí"),
+        ("Torta de chocolate",          "Porciones individuales",       850,  "sí"),
+        ("Pizza muzarella",             "Grande, 8 porciones",          3500, "no"),
+    ]
+    nota_fill = PatternFill("solid", fgColor="FFF9E6")
+    for row_num, fila in enumerate(ejemplos, start=2):
+        for col, val in enumerate(fila, start=1):
+            cell = ws.cell(row=row_num, column=col, value=val)
+            cell.fill = nota_fill
+            cell.border = border
+
+    # Hoja de instrucciones
+    ws2 = wb.create_sheet("Instrucciones")
+    instrucciones = [
+        ("INSTRUCCIONES PARA COMPLETAR LA PLANTILLA", True),
+        ("", False),
+        ("Columna NOMBRE (obligatorio):", True),
+        ("  Escribí el nombre del producto. No puede estar vacío.", False),
+        ("", False),
+        ("Columna DESCRIPCIÓN:", True),
+        ("  Descripción corta (opcional). Puede quedar en blanco.", False),
+        ("", False),
+        ("Columna PRECIO (obligatorio):", True),
+        ("  Número con punto o coma decimal. Ej: 1500 o 1500,50", False),
+        ("", False),
+        ("Columna EN OFERTA:", True),
+        ('  Escribí "sí" o "no". También acepta: si / yes / 1 / no / 0.', False),
+        ("", False),
+        ("IMPORTANTE:", True),
+        ("  - La primera fila DEBE ser el encabezado (no la borres).", False),
+        ("  - Las fotos las agregás desde el panel, una por una, después de importar.", False),
+        ("  - Podés importar el archivo como .xlsx o guardarlo como .csv.", False),
+    ]
+    ws2.column_dimensions["A"].width = 65
+    for i, (texto, bold) in enumerate(instrucciones, start=1):
+        cell = ws2.cell(row=i, column=1, value=texto)
+        cell.font = Font(bold=bold, size=11 if bold else 10)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return Response(
+        output.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=plantilla_productos.xlsx"},
+    )
 
 
 # ── Archivos estáticos subidos ─────────────────────────────────────────────────

@@ -6,9 +6,14 @@
   <h5 class="fw-bold mb-0">
     <i class="bi bi-box-seam me-2 text-primary"></i>Productos
   </h5>
-  <a href="{{ url_for('producto_nuevo') }}" class="btn btn-primary btn-sm">
-    <i class="bi bi-plus-lg me-1"></i>Nuevo
-  </a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('productos_importar') }}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-upload me-1"></i>Importar
+    </a>
+    <a href="{{ url_for('producto_nuevo') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>Nuevo
+    </a>
+  </div>
 </div>
 
 {% if not productos %}

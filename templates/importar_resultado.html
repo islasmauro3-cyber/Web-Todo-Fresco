@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Resultado de importación – Mis Ventas{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3 gap-2">
+  <a href="{{ url_for('productos') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h5 class="fw-bold mb-0">
+    <i class="bi bi-check2-circle me-2 text-success"></i>Importación completada
+  </h5>
+</div>
+
+<!-- Resumen -->
+<div class="alert alert-success d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-box-seam fs-4"></i>
+  <div>
+    <strong>{{ productos|length }} producto{{ 's' if productos|length != 1 else '' }} importado{{ 's' if productos|length != 1 else '' }}</strong>
+    correctamente. Ahora podés agregar la foto de cada uno.
+  </div>
+</div>
+
+{% if errores %}
+<div class="alert alert-warning mb-3">
+  <h6 class="fw-bold"><i class="bi bi-exclamation-triangle me-1"></i>Filas que no se pudieron importar</h6>
+  <ul class="mb-0 small">
+    {% for err in errores %}
+    <li>{{ err }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<!-- Lista de productos importados -->
+<div class="form-card p-0 overflow-hidden">
+  <div class="px-3 py-2 bg-light border-bottom d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">Productos importados — agregá la foto de cada uno</span>
+    <a href="{{ url_for('productos_importar') }}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-upload me-1"></i>Importar más
+    </a>
+  </div>
+
+  <ul class="list-group list-group-flush">
+    {% for p in productos %}
+    <li class="list-group-item py-2 px-3">
+      <div class="d-flex align-items-center gap-3">
+
+        <!-- Miniatura o placeholder -->
+        <div class="flex-shrink-0">
+          {% if p.foto %}
+          <img src="{{ url_for('uploaded_file', filename=p.foto) }}"
+               class="rounded" style="width:56px;height:56px;object-fit:cover;" alt="">
+          {% else %}
+          <div class="rounded bg-light border d-flex align-items-center justify-content-center"
+               style="width:56px;height:56px;color:#adb5bd;font-size:1.4rem;">
+            <i class="bi bi-image"></i>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Info -->
+        <div class="flex-grow-1 min-w-0">
+          <div class="fw-semibold text-truncate">{{ p.nombre }}</div>
+          {% if p.descripcion %}
+          <div class="text-muted small text-truncate">{{ p.descripcion }}</div>
+          {% endif %}
+          <div class="d-flex gap-2 align-items-center mt-1">
+            <span class="fw-bold text-primary">${{ "%.2f"|format(p.precio) }}</span>
+            {% if p.en_oferta %}
+            <span class="badge bg-danger" style="font-size:.7rem;">OFERTA</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Botón agregar foto -->
+        <div class="flex-shrink-0">
+          <a href="{{ url_for('producto_editar', pid=p.id) }}"
+             class="btn btn-sm {% if p.foto %}btn-outline-secondary{% else %}btn-primary{% endif %}">
+            <i class="bi bi-camera me-1"></i>
+            {% if p.foto %}Editar{% else %}Foto{% endif %}
+          </a>
+        </div>
+
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="d-grid mt-3">
+  <a href="{{ url_for('productos') }}" class="btn btn-outline-secondary">
+    <i class="bi bi-grid me-1"></i>Ver todos los productos
+  </a>
+</div>
+{% endblock %}
