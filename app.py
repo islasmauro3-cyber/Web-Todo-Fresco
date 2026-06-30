@@ -26,6 +26,41 @@ MAX_IMAGE_SIZE = (800, 800)
 # Contraseña de acceso (se puede cambiar por variable de entorno)
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "admin123")
 
+UNIDADES = [
+    "por kg",
+    "por unidad",
+    "por 100g",
+    "por 1/4 kg",
+    "por media horma",
+    "por horma entera",
+]
+
+_UNIDAD_MAP = {
+    # kg
+    "kg": "por kg", "kilo": "por kg", "kilos": "por kg", "kilogramo": "por kg",
+    "por kg": "por kg",
+    # 100g
+    "100g": "por 100g", "100 g": "por 100g", "por 100g": "por 100g",
+    # 1/4 kg
+    "1/4": "por 1/4 kg", "cuarto": "por 1/4 kg", "1/4 kg": "por 1/4 kg",
+    "por 1/4 kg": "por 1/4 kg", "cuarto kg": "por 1/4 kg",
+    # media horma
+    "media horma": "por media horma", "1/2 horma": "por media horma",
+    "por media horma": "por media horma", "media": "por media horma",
+    # horma entera
+    "horma": "por horma entera", "horma entera": "por horma entera",
+    "por horma entera": "por horma entera",
+    # unidad (default)
+    "unidad": "por unidad", "u": "por unidad", "ud": "por unidad",
+    "por unidad": "por unidad",
+}
+
+
+@app.template_filter("unidad_corta")
+def unidad_corta(u):
+    """'por kg' → 'kg', para mostrar '$3500 / kg'."""
+    return (u or "unidad").replace("por ", "", 1)
+
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -135,7 +170,7 @@ def productos():
 def producto_nuevo():
     if request.method == "POST":
         return _guardar_producto(None)
-    return render_template("producto_form.html", producto=None)
+    return render_template("producto_form.html", producto=None, unidades=UNIDADES)
 
 
 @app.route("/productos/<int:pid>/editar", methods=["GET", "POST"])
@@ -148,7 +183,7 @@ def producto_editar(pid):
         abort(404)
     if request.method == "POST":
         return _guardar_producto(dict(row))
-    return render_template("producto_form.html", producto=dict(row))
+    return render_template("producto_form.html", producto=dict(row), unidades=UNIDADES)
 
 
 def _guardar_producto(existente):
@@ -156,6 +191,9 @@ def _guardar_producto(existente):
     nombre = request.form.get("nombre", "").strip()
     descripcion = request.form.get("descripcion", "").strip()
     precio_raw = request.form.get("precio", "").strip().replace(",", ".")
+    unidad = request.form.get("unidad", "por unidad")
+    if unidad not in UNIDADES:
+        unidad = "por unidad"
     en_oferta = 1 if request.form.get("en_oferta") else 0
     oferta_desde = request.form.get("oferta_desde") or None
     oferta_hasta = request.form.get("oferta_hasta") or None
@@ -163,13 +201,13 @@ def _guardar_producto(existente):
 
     if not nombre:
         flash("El nombre es obligatorio.", "danger")
-        return render_template("producto_form.html", producto=existente)
+        return render_template("producto_form.html", producto=existente, unidades=UNIDADES)
 
     try:
         precio = float(precio_raw)
     except ValueError:
         flash("El precio debe ser un número.", "danger")
-        return render_template("producto_form.html", producto=existente)
+        return render_template("producto_form.html", producto=existente, unidades=UNIDADES)
 
     foto_actual = existente["foto"] if existente else None
     foto = foto_actual
@@ -178,7 +216,7 @@ def _guardar_producto(existente):
     if file and file.filename:
         if not allowed_file(file.filename):
             flash("Formato de imagen no permitido. Usá JPG, PNG o WEBP.", "danger")
-            return render_template("producto_form.html", producto=existente)
+            return render_template("producto_form.html", producto=existente, unidades=UNIDADES)
         delete_image(foto_actual)
         foto = save_image(file)
 
@@ -186,17 +224,19 @@ def _guardar_producto(existente):
     if pid:
         db.execute(
             """UPDATE productos SET nombre=?, descripcion=?, precio=?, foto=?,
-               en_oferta=?, oferta_desde=?, oferta_hasta=?, activo=?
+               unidad=?, en_oferta=?, oferta_desde=?, oferta_hasta=?, activo=?
                WHERE id=?""",
-            (nombre, descripcion, precio, foto, en_oferta, oferta_desde, oferta_hasta, activo, pid),
+            (nombre, descripcion, precio, foto, unidad,
+             en_oferta, oferta_desde, oferta_hasta, activo, pid),
         )
         flash("Producto actualizado.", "success")
     else:
         db.execute(
-            """INSERT INTO productos (nombre, descripcion, precio, foto, en_oferta,
-               oferta_desde, oferta_hasta, activo)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (nombre, descripcion, precio, foto, en_oferta, oferta_desde, oferta_hasta, activo),
+            """INSERT INTO productos (nombre, descripcion, precio, foto, unidad,
+               en_oferta, oferta_desde, oferta_hasta, activo)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (nombre, descripcion, precio, foto, unidad,
+             en_oferta, oferta_desde, oferta_hasta, activo),
         )
         flash("Producto creado.", "success")
     db.commit()
@@ -353,10 +393,11 @@ def _generar_mensaje(ofertas):
     lineas = ["🛍️ *¡Ofertas del día!* 🛍️", ""]
     for p in ofertas:
         precio_fmt = f"${p['precio']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        u = (p.get("unidad") or "por unidad").replace("por ", "", 1)
         lineas.append(f"✅ *{p['nombre']}*")
         if p["descripcion"]:
             lineas.append(f"   {p['descripcion']}")
-        lineas.append(f"   💲 {precio_fmt}")
+        lineas.append(f"   💲 {precio_fmt} / {u}")
         lineas.append("")
     lineas.append("¡Contactame para hacer tu pedido! 😊")
     return "\n".join(lineas)
@@ -369,6 +410,10 @@ VERDADERO = {"si", "sí", "yes", "1", "true", "verdadero", "v", "s", "y"}
 
 def _parsear_en_oferta(val):
     return 1 if str(val).strip().lower() in VERDADERO else 0
+
+
+def _parsear_unidad(val):
+    return _UNIDAD_MAP.get(str(val or "").strip().lower(), "por unidad")
 
 
 def _parsear_precio(val):
@@ -410,6 +455,8 @@ def _procesar_filas(rows):
             col_map["precio"] = i
         elif "oferta" in h:
             col_map["en_oferta"] = i
+        elif "unidad" in h:
+            col_map["unidad"] = i
 
     faltantes = [c for c in ("nombre", "precio") if c not in col_map]
     if faltantes:
@@ -425,6 +472,7 @@ def _procesar_filas(rows):
         descripcion = str(row[col_map.get("descripcion", -1)] or "").strip() if "descripcion" in col_map else ""
         precio_raw = row[col_map["precio"]]
         en_oferta_raw = row[col_map.get("en_oferta", -1)] if "en_oferta" in col_map else ""
+        unidad_raw = row[col_map.get("unidad", -1)] if "unidad" in col_map else ""
 
         if not nombre:
             errores.append(f"Fila {n}: nombre vacío — se omitió.")
@@ -440,6 +488,7 @@ def _procesar_filas(rows):
             "descripcion": descripcion,
             "precio": precio,
             "en_oferta": _parsear_en_oferta(en_oferta_raw),
+            "unidad": _parsear_unidad(unidad_raw),
         })
 
     return productos, errores
@@ -484,9 +533,9 @@ def productos_importar():
     ids_nuevos = []
     for p in productos:
         cur = db.execute(
-            """INSERT INTO productos (nombre, descripcion, precio, en_oferta, activo)
-               VALUES (?,?,?,?,1)""",
-            (p["nombre"], p["descripcion"], p["precio"], p["en_oferta"]),
+            """INSERT INTO productos (nombre, descripcion, precio, unidad, en_oferta, activo)
+               VALUES (?,?,?,?,?,1)""",
+            (p["nombre"], p["descripcion"], p["precio"], p["unidad"], p["en_oferta"]),
         )
         ids_nuevos.append(cur.lastrowid)
     db.commit()
@@ -521,9 +570,9 @@ def productos_plantilla():
     thin = Side(style="thin", color="CCCCCC")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    headers = ["nombre", "descripcion", "precio", "en_oferta"]
-    labels  = ["Nombre *", "Descripción", "Precio *", "En oferta (sí/no)"]
-    widths  = [30, 40, 14, 20]
+    headers = ["nombre", "descripcion", "precio", "en_oferta", "unidad"]
+    labels  = ["Nombre *", "Descripción", "Precio *", "En oferta (sí/no)", "Unidad de venta"]
+    widths  = [30, 40, 14, 20, 22]
 
     for col, (label, width) in enumerate(zip(labels, widths), start=1):
         cell = ws.cell(row=1, column=col, value=label)
@@ -537,10 +586,12 @@ def productos_plantilla():
 
     # Filas de ejemplo
     ejemplos = [
-        ("Empanadas de carne (docena)", "Rellenas con cebolla y huevo", 2500, "no"),
-        ("Medialunas (bandeja x6)",     "Con manteca, crocantes",       1200, "sí"),
-        ("Torta de chocolate",          "Porciones individuales",       850,  "sí"),
-        ("Pizza muzarella",             "Grande, 8 porciones",          3500, "no"),
+        ("Empanadas de carne", "Rellenas con cebolla y huevo", 2500, "no",  "por unidad"),
+        ("Queso cremoso",      "Cremoso suave",                3800, "sí",  "por kg"),
+        ("Salame",             "Estacionado, picante",         4200, "no",  "por 100g"),
+        ("Medialunas",         "Con manteca, crocantes",       1200, "sí",  "por unidad"),
+        ("Queso en horma",     "Horma entera aprox. 3 kg",    11000, "no",  "por horma entera"),
+        ("Queso 1/4",          "Un cuarto de horma",           2800, "sí",  "por 1/4 kg"),
     ]
     nota_fill = PatternFill("solid", fgColor="FFF9E6")
     for row_num, fila in enumerate(ejemplos, start=2):
@@ -551,6 +602,7 @@ def productos_plantilla():
 
     # Hoja de instrucciones
     ws2 = wb.create_sheet("Instrucciones")
+    unidades_str = " / ".join(UNIDADES)
     instrucciones = [
         ("INSTRUCCIONES PARA COMPLETAR LA PLANTILLA", True),
         ("", False),
@@ -566,12 +618,17 @@ def productos_plantilla():
         ("Columna EN OFERTA:", True),
         ('  Escribí "sí" o "no". También acepta: si / yes / 1 / no / 0.', False),
         ("", False),
+        ("Columna UNIDAD DE VENTA:", True),
+        (f"  Opciones válidas: {unidades_str}", False),
+        ("  También se aceptan abreviaturas: kg, 100g, 1/4, horma, media horma, etc.", False),
+        ("  Si dejás la celda vacía o escribís algo distinto, se usa 'por unidad'.", False),
+        ("", False),
         ("IMPORTANTE:", True),
         ("  - La primera fila DEBE ser el encabezado (no la borres).", False),
         ("  - Las fotos las agregás desde el panel, una por una, después de importar.", False),
         ("  - Podés importar el archivo como .xlsx o guardarlo como .csv.", False),
     ]
-    ws2.column_dimensions["A"].width = 65
+    ws2.column_dimensions["A"].width = 70
     for i, (texto, bold) in enumerate(instrucciones, start=1):
         cell = ws2.cell(row=i, column=1, value=texto)
         cell.font = Font(bold=bold, size=11 if bold else 10)

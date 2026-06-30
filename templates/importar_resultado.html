@@ -65,7 +65,10 @@
           <div class="text-muted small text-truncate">{{ p.descripcion }}</div>
           {% endif %}
           <div class="d-flex gap-2 align-items-center mt-1">
-            <span class="fw-bold text-primary">${{ "%.2f"|format(p.precio) }}</span>
+            <span class="fw-bold text-primary">
+              ${{ "%.2f"|format(p.precio) }}
+              <span class="text-muted fw-normal" style="font-size:.8rem;">/ {{ p.unidad|unidad_corta }}</span>
+            </span>
             {% if p.en_oferta %}
             <span class="badge bg-danger" style="font-size:.7rem;">OFERTA</span>
             {% endif %}

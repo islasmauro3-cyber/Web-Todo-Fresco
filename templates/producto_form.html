@@ -53,13 +53,26 @@
               placeholder="Ej: Docena, rellenas con cebolla y huevo">{{ producto.descripcion if producto else '' }}</textarea>
   </div>
 
-  <div class="mb-3">
-    <label class="form-label fw-semibold">Precio <span class="text-danger">*</span></label>
-    <div class="input-group">
-      <span class="input-group-text">$</span>
-      <input type="number" name="precio" class="form-control"
-             value="{{ producto.precio if producto else '' }}"
-             step="0.01" min="0" placeholder="0.00" required>
+  <div class="row g-2 mb-3">
+    <div class="col-7">
+      <label class="form-label fw-semibold">Precio <span class="text-danger">*</span></label>
+      <div class="input-group">
+        <span class="input-group-text">$</span>
+        <input type="number" name="precio" class="form-control"
+               value="{{ producto.precio if producto else '' }}"
+               step="0.01" min="0" placeholder="0.00" required>
+      </div>
+    </div>
+    <div class="col-5">
+      <label class="form-label fw-semibold">Unidad</label>
+      <select name="unidad" class="form-select">
+        {% for u in unidades %}
+        <option value="{{ u }}"
+          {% if producto and producto.unidad == u %}selected
+          {% elif not producto and u == 'por unidad' %}selected
+          {% endif %}>{{ u }}</option>
+        {% endfor %}
+      </select>
     </div>
   </div>
 

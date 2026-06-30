@@ -28,7 +28,10 @@
              alt="{{ p.nombre }}">
         {% endif %}
         <div class="fw-semibold small">{{ p.nombre }}</div>
-        <div class="text-primary fw-bold small">${{ "%.2f"|format(p.precio) }}</div>
+        <div class="text-primary fw-bold small">
+            ${{ "%.2f"|format(p.precio) }}
+            <span class="text-muted fw-normal">/ {{ p.unidad|unidad_corta }}</span>
+          </div>
       </div>
     </div>
     {% endfor %}

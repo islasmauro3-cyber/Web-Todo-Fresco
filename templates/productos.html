@@ -56,7 +56,10 @@
         {% if p.descripcion %}
         <p class="text-muted mb-1" style="font-size:.75rem;">{{ p.descripcion }}</p>
         {% endif %}
-        <p class="fw-bold text-primary mb-2">${{ "%.2f"|format(p.precio) }}</p>
+        <p class="fw-bold text-primary mb-2">
+          ${{ "%.2f"|format(p.precio) }}
+          <span class="text-muted fw-normal" style="font-size:.8rem;">/ {{ p.unidad|unidad_corta }}</span>
+        </p>
 
         <div class="d-flex gap-1 flex-wrap">
           <a href="{{ url_for('producto_editar', pid=p.id) }}"

@@ -37,5 +37,9 @@ def init_db():
             notas       TEXT    NOT NULL DEFAULT ''
         );
     """)
+    # Migración: agregar columna unidad si no existe (bases de datos existentes)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(productos)").fetchall()}
+    if "unidad" not in cols:
+        conn.execute("ALTER TABLE productos ADD COLUMN unidad TEXT NOT NULL DEFAULT 'por unidad'")
     conn.commit()
     conn.close()
