@@ -36,6 +36,12 @@ def init_db():
             activo      INTEGER NOT NULL DEFAULT 1,
             notas       TEXT    NOT NULL DEFAULT ''
         );
+
+        CREATE TABLE IF NOT EXISTS column_mappings (
+            fingerprint TEXT    PRIMARY KEY,
+            mapping     TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+        );
     """)
     # Migración: agregar columna unidad si no existe (bases de datos existentes)
     cols = {row[1] for row in conn.execute("PRAGMA table_info(productos)").fetchall()}

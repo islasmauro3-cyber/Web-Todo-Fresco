@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Mapear columnas – Mis Ventas{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3 gap-2">
+  <a href="{{ url_for('productos_importar') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h5 class="fw-bold mb-0">Mapear columnas</h5>
+    <div class="text-muted small">
+      <i class="bi bi-file-earmark me-1"></i>{{ state.filename }}
+    </div>
+  </div>
+</div>
+
+{% if tiene_guardado %}
+<div class="alert alert-info py-2 small mb-3">
+  <i class="bi bi-bookmark-check me-1"></i>
+  <strong>Se encontró una configuración guardada</strong> para este tipo de archivo.
+  Los campos ya están pre-completados — podés ajustarlos si querés.
+</div>
+{% endif %}
+
+<!-- Vista previa del archivo -->
+<div class="form-card mb-3 p-0 overflow-hidden">
+  <div class="px-3 py-2 bg-light border-bottom">
+    <span class="fw-semibold small">
+      <i class="bi bi-table me-1"></i>Vista previa del archivo
+      <span class="text-muted">(primeras {{ preview|length }} filas)</span>
+    </span>
+  </div>
+  <div class="table-responsive" style="max-height:200px; overflow-y:auto;">
+    <table class="table table-sm table-bordered mb-0" id="previewTable" style="font-size:.8rem; min-width:400px;">
+      <thead class="table-light sticky-top">
+        <tr>
+          {% for h in headers %}
+          <th class="col-header text-nowrap px-2" data-col="{{ h }}">
+            {{ h if h else '(vacío)' }}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in preview %}
+        <tr>
+          {% for cell in row %}
+          <td class="text-nowrap px-2" style="max-width:160px; overflow:hidden; text-overflow:ellipsis;">
+            {{ cell }}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Aviso de columnas sin usar (se actualiza via JS) -->
+<div id="unusedWarning" class="alert alert-warning py-2 small d-none mb-3">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  Estas columnas <strong>no se van a importar</strong>:
+  <span id="unusedList" class="fw-semibold"></span>
+</div>
+
+<!-- Formulario de mapeo -->
+<form method="post" id="mapForm">
+  <div class="form-card mb-3">
+    <h6 class="fw-semibold mb-3">
+      <i class="bi bi-arrow-left-right me-1 text-primary"></i>
+      ¿Qué columna de tu archivo corresponde a cada campo?
+    </h6>
+
+    {% set CAMPOS = [
+      ("nombre",      "Nombre",            True,  "El nombre del producto"),
+      ("precio",      "Precio",            True,  "Número (1500 o 1500,50)"),
+      ("descripcion", "Descripción",       False, "Descripción corta (opcional)"),
+      ("unidad",      "Unidad de venta",   False, "kg, unidad, 100g… (opcional)"),
+      ("en_oferta",   "En oferta",         False, "sí / no / 1 / 0 (opcional)"),
+    ] %}
+
+    {% for campo, label, requerido, hint in CAMPOS %}
+    <div class="mb-3">
+      <label class="form-label fw-semibold mb-1">
+        {{ label }}
+        {% if requerido %}
+        <span class="badge bg-danger ms-1" style="font-size:.65rem;">obligatorio</span>
+        {% endif %}
+      </label>
+      <select name="map_{{ campo }}" class="form-select map-select" data-campo="{{ campo }}">
+        <option value="">— no usar esta columna —</option>
+        {% for h in headers %}
+        {% if h %}
+        <option value="{{ h }}"
+          {% if mapping.get(campo) == h %}selected{% endif %}>
+          {{ h }}
+        </option>
+        {% endif %}
+        {% endfor %}
+      </select>
+      <div class="form-text">{{ hint }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="form-card mb-3">
+    <div class="form-check form-switch">
+      <input type="checkbox" name="guardar_mapeo" id="guardarMapeo"
+             class="form-check-input" value="1"
+             {% if tiene_guardado or not mapping %}checked{% endif %}>
+      <label class="form-check-label fw-semibold" for="guardarMapeo">
+        <i class="bi bi-bookmark me-1"></i>Recordar esta configuración para la próxima vez
+      </label>
+    </div>
+    <div class="form-text mt-1">
+      Si subís otro archivo con las mismas columnas, se pre-completará automáticamente.
+    </div>
+  </div>
+
+  <div class="d-grid gap-2">
+    <button type="submit" class="btn btn-primary btn-lg" id="btnImportar" disabled>
+      <i class="bi bi-upload me-1"></i>Importar productos
+    </button>
+    <a href="{{ url_for('productos_importar') }}" class="btn btn-outline-secondary">
+      Cancelar y subir otro archivo
+    </a>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const selects = document.querySelectorAll('.map-select');
+const allHeaders = {{ headers | tojson }};
+
+function actualizarEstado() {
+  const usadas = new Set(
+    [...selects].map(s => s.value).filter(v => v)
+  );
+
+  // Colorear columnas en la tabla de preview
+  document.querySelectorAll('.col-header').forEach(th => {
+    const col = th.dataset.col;
+    th.classList.toggle('table-success', usadas.has(col));
+    th.classList.toggle('table-warning', !usadas.has(col));
+  });
+
+  // Mostrar columnas sin usar
+  const unused = allHeaders.filter(h => h && !usadas.has(h));
+  const warningEl = document.getElementById('unusedWarning');
+  if (unused.length > 0) {
+    document.getElementById('unusedList').textContent = unused.join(', ');
+    warningEl.classList.remove('d-none');
+  } else {
+    warningEl.classList.add('d-none');
+  }
+
+  // Habilitar botón solo si nombre y precio están mapeados
+  const nombre = document.querySelector('[name=map_nombre]').value;
+  const precio = document.querySelector('[name=map_precio]').value;
+  document.getElementById('btnImportar').disabled = !(nombre && precio);
+}
+
+selects.forEach(s => s.addEventListener('change', actualizarEstado));
+actualizarEstado();  // estado inicial al cargar la página
+
+// Prevenir doble submit
+document.getElementById('mapForm').addEventListener('submit', () => {
+  const btn = document.getElementById('btnImportar');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Importando…';
+});
+</script>
+{% endblock %}

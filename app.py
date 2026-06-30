@@ -2,6 +2,8 @@ import os
 import csv
 import io
 import uuid
+import hashlib
+import json
 from datetime import datetime, date
 from functools import wraps
 
@@ -405,6 +407,7 @@ def _generar_mensaje(ofertas):
 
 # ── Importación masiva ────────────────────────────────────────────────────────
 
+IMPORT_CACHE_DIR = "/tmp/mis_ventas_import"
 VERDADERO = {"si", "sí", "yes", "1", "true", "verdadero", "v", "s", "y"}
 
 
@@ -437,61 +440,112 @@ def _filas_csv(file_bytes):
     return list(reader)
 
 
-def _procesar_filas(rows):
-    """Devuelve (productos_validos, errores) a partir de las filas crudas (incluyendo cabecera)."""
-    if not rows:
-        return [], ["El archivo está vacío."]
+def _fingerprint(headers):
+    """Fingerprint estable basado en el conjunto de nombres de columna."""
+    key = "|".join(sorted(h.strip().lower() for h in headers if h))
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
 
-    # Normalizar cabecera
-    header = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
 
-    col_map = {}
-    for i, h in enumerate(header):
-        if "nombre" in h:
-            col_map["nombre"] = i
-        elif "descrip" in h:
-            col_map["descripcion"] = i
-        elif "precio" in h:
-            col_map["precio"] = i
-        elif "oferta" in h:
-            col_map["en_oferta"] = i
-        elif "unidad" in h:
-            col_map["unidad"] = i
+def _auto_detectar(headers):
+    """Intenta mapear cada campo del sistema a la columna más probable del archivo."""
+    PATRONES = {
+        "nombre":      ("nombre", "producto", "name", "artículo", "articulo", "item"),
+        "descripcion": ("descrip", "detalle", "detail", "observ", "nota", "comment"),
+        "precio":      ("precio", "price", "valor", "costo", "importe", "monto", "pvp", "venta"),
+        "unidad":      ("unidad", "unit", "medida", "formato", "presentac"),
+        "en_oferta":   ("oferta", "offer", "descuento", "promo", "rebaj", "sale"),
+    }
+    lower_h = [(i, h, h.strip().lower()) for i, h in enumerate(headers) if h]
+    mapping, usados = {}, set()
+    for campo, patrones in PATRONES.items():
+        for i, h, lh in lower_h:
+            if i not in usados and any(p in lh for p in patrones):
+                mapping[campo] = h
+                usados.add(i)
+                break
+    return mapping
 
-    faltantes = [c for c in ("nombre", "precio") if c not in col_map]
-    if faltantes:
-        return [], [f"Columnas obligatorias no encontradas: {', '.join(faltantes)}. "
-                    f"Verificá que la primera fila sea el encabezado."]
+
+def _get_saved_mapping(fingerprint):
+    db = get_db()
+    row = db.execute(
+        "SELECT mapping FROM column_mappings WHERE fingerprint=?", (fingerprint,)
+    ).fetchone()
+    db.close()
+    return json.loads(row["mapping"]) if row else None
+
+
+def _save_mapping_db(fingerprint, mapping):
+    db = get_db()
+    db.execute(
+        """INSERT INTO column_mappings (fingerprint, mapping) VALUES (?, ?)
+           ON CONFLICT(fingerprint) DO UPDATE SET
+             mapping=excluded.mapping,
+             updated_at=datetime('now','localtime')""",
+        (fingerprint, json.dumps(mapping, ensure_ascii=False)),
+    )
+    db.commit()
+    db.close()
+
+
+def _procesar_filas_con_mapping(data_rows, headers, field_to_col):
+    """Procesa filas usando el mapeo explícito {campo: nombre_columna}."""
+    header_idx = {h: i for i, h in enumerate(headers)}
+
+    def get_val(row, campo):
+        col = field_to_col.get(campo, "")
+        if not col or col not in header_idx:
+            return None
+        idx = header_idx[col]
+        return row[idx] if idx < len(row) else None
+
+    if not field_to_col.get("nombre") or not field_to_col.get("precio"):
+        return [], ["El mapeo debe incluir los campos obligatorios: Nombre y Precio."]
 
     productos, errores = [], []
-    for n, row in enumerate(rows[1:], start=2):
-        if all(c is None or str(c).strip() == "" for c in row):
-            continue  # fila vacía
+    for n, row in enumerate(data_rows, start=2):
+        if all(str(c).strip() == "" for c in row):
+            continue
 
-        nombre = str(row[col_map["nombre"]] or "").strip()
-        descripcion = str(row[col_map.get("descripcion", -1)] or "").strip() if "descripcion" in col_map else ""
-        precio_raw = row[col_map["precio"]]
-        en_oferta_raw = row[col_map.get("en_oferta", -1)] if "en_oferta" in col_map else ""
-        unidad_raw = row[col_map.get("unidad", -1)] if "unidad" in col_map else ""
-
+        nombre = str(get_val(row, "nombre") or "").strip()
         if not nombre:
             errores.append(f"Fila {n}: nombre vacío — se omitió.")
             continue
 
+        precio_raw = get_val(row, "precio")
         precio = _parsear_precio(precio_raw)
         if precio is None:
-            errores.append(f"Fila {n} ({nombre!r}): precio inválido ({precio_raw!r}) — se omitió.")
+            errores.append(f"Fila {n} ({nombre!r}): precio inválido ({precio_raw!s}) — se omitió.")
             continue
 
         productos.append({
             "nombre": nombre,
-            "descripcion": descripcion,
+            "descripcion": str(get_val(row, "descripcion") or "").strip(),
             "precio": precio,
-            "en_oferta": _parsear_en_oferta(en_oferta_raw),
-            "unidad": _parsear_unidad(unidad_raw),
+            "en_oferta": _parsear_en_oferta(get_val(row, "en_oferta") or ""),
+            "unidad": _parsear_unidad(get_val(row, "unidad") or ""),
         })
 
     return productos, errores
+
+
+def _guardar_importados(productos):
+    db = get_db()
+    ids = []
+    for p in productos:
+        cur = db.execute(
+            """INSERT INTO productos (nombre, descripcion, precio, unidad, en_oferta, activo)
+               VALUES (?,?,?,?,?,1)""",
+            (p["nombre"], p["descripcion"], p["precio"], p["unidad"], p["en_oferta"]),
+        )
+        ids.append(cur.lastrowid)
+    db.commit()
+    placeholders = ",".join("?" * len(ids))
+    nuevos = [dict(r) for r in db.execute(
+        f"SELECT * FROM productos WHERE id IN ({placeholders}) ORDER BY nombre", ids
+    ).fetchall()]
+    db.close()
+    return nuevos
 
 
 @app.route("/productos/importar", methods=["GET", "POST"])
@@ -512,45 +566,106 @@ def productos_importar():
 
     file_bytes = file.read()
     try:
-        rows = _filas_excel(file_bytes) if ext in ("xlsx", "xls") else _filas_csv(file_bytes)
+        all_rows = _filas_excel(file_bytes) if ext in ("xlsx", "xls") else _filas_csv(file_bytes)
     except Exception as e:
         flash(f"No se pudo leer el archivo: {e}", "danger")
         return render_template("importar_productos.html")
 
-    productos, errores = _procesar_filas(rows)
-
-    if not productos and not errores:
-        flash("El archivo no contiene filas con datos.", "warning")
+    if len(all_rows) < 2:
+        flash("El archivo necesita al menos una fila de encabezado y una de datos.", "warning")
         return render_template("importar_productos.html")
+
+    headers = [str(c).strip() if c is not None else "" for c in all_rows[0]]
+    data_rows = [[str(c) if c is not None else "" for c in row] for row in all_rows[1:]]
+
+    os.makedirs(IMPORT_CACHE_DIR, exist_ok=True)
+    tmp_key = uuid.uuid4().hex
+    with open(os.path.join(IMPORT_CACHE_DIR, f"{tmp_key}.json"), "w", encoding="utf-8") as f:
+        json.dump({"headers": headers, "rows": data_rows}, f, ensure_ascii=False)
+
+    session["import_state"] = {
+        "tmp_key": tmp_key,
+        "fingerprint": _fingerprint(headers),
+        "filename": file.filename,
+    }
+    return redirect(url_for("productos_mapear"))
+
+
+@app.route("/productos/importar/mapear", methods=["GET", "POST"])
+@login_required
+def productos_mapear():
+    state = session.get("import_state")
+    if not state:
+        flash("La sesión de importación expiró. Subí el archivo nuevamente.", "warning")
+        return redirect(url_for("productos_importar"))
+
+    tmp_path = os.path.join(IMPORT_CACHE_DIR, f"{state['tmp_key']}.json")
+    try:
+        with open(tmp_path, encoding="utf-8") as f:
+            cached = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        flash("El archivo temporal no se encontró. Subí el archivo nuevamente.", "danger")
+        session.pop("import_state", None)
+        return redirect(url_for("productos_importar"))
+
+    headers = cached["headers"]
+    fingerprint = state["fingerprint"]
+
+    if request.method == "GET":
+        saved = _get_saved_mapping(fingerprint)
+        if saved:
+            # Descartar columnas guardadas que ya no existen en el archivo actual
+            saved = {k: v for k, v in saved.items() if not v or v in headers}
+        mapping = saved or _auto_detectar(headers)
+        preview = cached["rows"][:5]
+        return render_template(
+            "mapear_columnas.html",
+            state=state,
+            headers=headers,
+            preview=preview,
+            mapping=mapping,
+            tiene_guardado=bool(saved),
+        )
+
+    # POST: leer mapeo del formulario
+    CAMPOS = ("nombre", "descripcion", "precio", "unidad", "en_oferta")
+    field_to_col = {
+        campo: request.form.get(f"map_{campo}", "").strip()
+        for campo in CAMPOS
+        if request.form.get(f"map_{campo}", "").strip()
+    }
+
+    if not field_to_col.get("nombre") or not field_to_col.get("precio"):
+        flash("Debés mapear los campos obligatorios: Nombre y Precio.", "danger")
+        preview = cached["rows"][:5]
+        return render_template(
+            "mapear_columnas.html",
+            state=state,
+            headers=headers,
+            preview=preview,
+            mapping=field_to_col,
+            tiene_guardado=False,
+        )
+
+    if request.form.get("guardar_mapeo"):
+        _save_mapping_db(fingerprint, field_to_col)
+
+    productos, errores = _procesar_filas_con_mapping(cached["rows"], headers, field_to_col)
+
+    try:
+        os.remove(tmp_path)
+    except OSError:
+        pass
+    session.pop("import_state", None)
 
     if not productos:
         for err in errores:
             flash(err, "danger")
-        return render_template("importar_productos.html")
+        return redirect(url_for("productos_importar"))
 
-    # Insertar en la base de datos
-    db = get_db()
-    ids_nuevos = []
-    for p in productos:
-        cur = db.execute(
-            """INSERT INTO productos (nombre, descripcion, precio, unidad, en_oferta, activo)
-               VALUES (?,?,?,?,?,1)""",
-            (p["nombre"], p["descripcion"], p["precio"], p["unidad"], p["en_oferta"]),
-        )
-        ids_nuevos.append(cur.lastrowid)
-    db.commit()
-
-    # Traer los productos recién insertados para mostrarlos
-    placeholders = ",".join("?" * len(ids_nuevos))
-    nuevos = [dict(r) for r in db.execute(
-        f"SELECT * FROM productos WHERE id IN ({placeholders}) ORDER BY nombre",
-        ids_nuevos,
-    ).fetchall()]
-    db.close()
-
+    nuevos = _guardar_importados(productos)
     for err in errores:
         flash(err, "warning")
-
     flash(f"Se importaron {len(productos)} productos correctamente.", "success")
     return render_template("importar_resultado.html", productos=nuevos, errores=errores)
 
@@ -654,4 +769,5 @@ def uploaded_file(filename):
 if __name__ == "__main__":
     init_db()
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(IMPORT_CACHE_DIR, exist_ok=True)
     app.run(debug=True, host="0.0.0.0", port=5000)
