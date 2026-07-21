@@ -1,4 +1,5 @@
 import os
+import re
 import csv
 import io
 import uuid
@@ -25,7 +26,6 @@ UPLOAD_FOLDER = os.path.join(app.root_path, "static", "uploads")
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
 MAX_IMAGE_SIZE = (800, 800)
 
-# Contraseña de acceso (se puede cambiar por variable de entorno)
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "admin123")
 
 UNIDADES = [
@@ -38,21 +38,15 @@ UNIDADES = [
 ]
 
 _UNIDAD_MAP = {
-    # kg
     "kg": "por kg", "kilo": "por kg", "kilos": "por kg", "kilogramo": "por kg",
     "por kg": "por kg",
-    # 100g
     "100g": "por 100g", "100 g": "por 100g", "por 100g": "por 100g",
-    # 1/4 kg
     "1/4": "por 1/4 kg", "cuarto": "por 1/4 kg", "1/4 kg": "por 1/4 kg",
     "por 1/4 kg": "por 1/4 kg", "cuarto kg": "por 1/4 kg",
-    # media horma
     "media horma": "por media horma", "1/2 horma": "por media horma",
     "por media horma": "por media horma", "media": "por media horma",
-    # horma entera
     "horma": "por horma entera", "horma entera": "por horma entera",
     "por horma entera": "por horma entera",
-    # unidad (default)
     "unidad": "por unidad", "u": "por unidad", "ud": "por unidad",
     "por unidad": "por unidad",
 }
@@ -69,7 +63,6 @@ def allowed_file(filename):
 
 
 def save_image(file):
-    """Guarda y redimensiona la imagen subida. Devuelve el nombre del archivo."""
     ext = file.filename.rsplit(".", 1)[1].lower()
     filename = f"{uuid.uuid4().hex}.{ext}"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
@@ -95,18 +88,91 @@ def login_required(f):
     return decorated
 
 
-def oferta_activa(producto):
-    """Determina si un producto está en oferta activa hoy."""
-    if not producto["en_oferta"]:
-        return False
+def oferta_activa(producto, variantes=None):
+    """Determina si un producto tiene oferta activa hoy."""
     hoy = date.today().isoformat()
-    desde = producto["oferta_desde"] or ""
-    hasta = producto["oferta_hasta"] or ""
+    desde = (producto.get("oferta_desde") or "")
+    hasta = (producto.get("oferta_hasta") or "")
     if desde and hoy < desde:
         return False
     if hasta and hoy > hasta:
         return False
-    return True
+    if variantes is not None:
+        return any(v["en_oferta"] for v in variantes)
+    return bool(producto.get("en_oferta"))
+
+
+# ── Variantes helpers ──────────────────────────────────────────────────────────
+
+def _get_variantes(producto_id, db=None):
+    close = db is None
+    if close:
+        db = get_db()
+    rows = db.execute(
+        "SELECT * FROM variantes WHERE producto_id=? ORDER BY orden, id", (producto_id,)
+    ).fetchall()
+    if close:
+        db.close()
+    return [dict(r) for r in rows]
+
+
+def _get_variantes_bulk(producto_ids, db=None):
+    close = db is None
+    if close:
+        db = get_db()
+    if not producto_ids:
+        if close:
+            db.close()
+        return {}
+    placeholders = ",".join("?" * len(producto_ids))
+    rows = db.execute(
+        f"SELECT * FROM variantes WHERE producto_id IN ({placeholders}) ORDER BY producto_id, orden, id",
+        producto_ids,
+    ).fetchall()
+    if close:
+        db.close()
+    result = {}
+    for r in rows:
+        r = dict(r)
+        result.setdefault(r["producto_id"], []).append(r)
+    return result
+
+
+def _parse_variantes_form():
+    """Extrae variantes del formulario (campos variante_precio_N / variante_unidad_N)."""
+    indices = set()
+    for key in request.form:
+        m = re.match(r"^variante_precio_(\d+)$", key)
+        if m:
+            indices.add(int(m.group(1)))
+    variantes = []
+    for idx in sorted(indices):
+        precio_raw = request.form.get(f"variante_precio_{idx}", "").strip().replace(",", ".")
+        unidad = request.form.get(f"variante_unidad_{idx}", "por unidad")
+        if unidad not in UNIDADES:
+            unidad = "por unidad"
+        en_oferta = 1 if request.form.get(f"variante_oferta_{idx}") else 0
+        try:
+            precio = float(precio_raw)
+            if precio >= 0:
+                variantes.append({
+                    "unidad": unidad,
+                    "precio": precio,
+                    "en_oferta": en_oferta,
+                    "orden": idx,
+                })
+        except ValueError:
+            pass
+    return variantes
+
+
+def _guardar_variantes_db(producto_id, variantes, db):
+    db.execute("DELETE FROM variantes WHERE producto_id=?", (producto_id,))
+    for i, v in enumerate(variantes):
+        db.execute(
+            "INSERT INTO variantes (producto_id, unidad, precio, en_oferta, orden) VALUES (?,?,?,?,?)",
+            (producto_id, v["unidad"], v["precio"], v["en_oferta"], i),
+        )
 
 
 # ── Autenticación ─────────────────────────────────────────────────────────────
@@ -138,9 +204,11 @@ def logout():
 def dashboard():
     db = get_db()
     total_productos = db.execute("SELECT COUNT(*) FROM productos WHERE activo=1").fetchone()[0]
-    en_oferta = db.execute(
-        "SELECT COUNT(*) FROM productos WHERE activo=1 AND en_oferta=1"
-    ).fetchone()[0]
+    en_oferta = db.execute("""
+        SELECT COUNT(DISTINCT p.id) FROM productos p
+        JOIN variantes v ON v.producto_id = p.id
+        WHERE p.activo=1 AND v.en_oferta=1
+    """).fetchone()[0]
     total_clientes = db.execute("SELECT COUNT(*) FROM clientes WHERE activo=1").fetchone()[0]
     db.close()
     return render_template(
@@ -160,10 +228,15 @@ def productos():
     rows = db.execute(
         "SELECT * FROM productos ORDER BY activo DESC, nombre ASC"
     ).fetchall()
+    ids = [r["id"] for r in rows]
+    variantes_by_prod = _get_variantes_bulk(ids, db)
     db.close()
-    items = [dict(r) for r in rows]
-    for p in items:
-        p["oferta_hoy"] = oferta_activa(p)
+    items = []
+    for r in rows:
+        p = dict(r)
+        p["variantes"] = variantes_by_prod.get(p["id"], [])
+        p["oferta_hoy"] = oferta_activa(p, p["variantes"])
+        items.append(p)
     return render_template("productos.html", productos=items)
 
 
@@ -172,7 +245,7 @@ def productos():
 def producto_nuevo():
     if request.method == "POST":
         return _guardar_producto(None)
-    return render_template("producto_form.html", producto=None, unidades=UNIDADES)
+    return render_template("producto_form.html", producto=None, unidades=UNIDADES, variantes_form=[])
 
 
 @app.route("/productos/<int:pid>/editar", methods=["GET", "POST"])
@@ -180,45 +253,51 @@ def producto_nuevo():
 def producto_editar(pid):
     db = get_db()
     row = db.execute("SELECT * FROM productos WHERE id=?", (pid,)).fetchone()
+    variantes = _get_variantes(pid, db)
     db.close()
     if not row:
         abort(404)
     if request.method == "POST":
         return _guardar_producto(dict(row))
-    return render_template("producto_form.html", producto=dict(row), unidades=UNIDADES)
+    return render_template(
+        "producto_form.html", producto=dict(row), unidades=UNIDADES, variantes_form=variantes
+    )
 
 
 def _guardar_producto(existente):
     pid = existente["id"] if existente else None
     nombre = request.form.get("nombre", "").strip()
     descripcion = request.form.get("descripcion", "").strip()
-    precio_raw = request.form.get("precio", "").strip().replace(",", ".")
-    unidad = request.form.get("unidad", "por unidad")
-    if unidad not in UNIDADES:
-        unidad = "por unidad"
-    en_oferta = 1 if request.form.get("en_oferta") else 0
     oferta_desde = request.form.get("oferta_desde") or None
     oferta_hasta = request.form.get("oferta_hasta") or None
     activo = 1 if request.form.get("activo") else 0
 
-    if not nombre:
-        flash("El nombre es obligatorio.", "danger")
-        return render_template("producto_form.html", producto=existente, unidades=UNIDADES)
+    variantes = _parse_variantes_form()
 
-    try:
-        precio = float(precio_raw)
-    except ValueError:
-        flash("El precio debe ser un número.", "danger")
-        return render_template("producto_form.html", producto=existente, unidades=UNIDADES)
+    def render_form(msg=None, category="danger"):
+        if msg:
+            flash(msg, category)
+        return render_template(
+            "producto_form.html", producto=existente,
+            unidades=UNIDADES, variantes_form=variantes,
+        )
+
+    if not nombre:
+        return render_form("El nombre es obligatorio.")
+    if not variantes:
+        return render_form("Debés agregar al menos un precio.")
+
+    primera = variantes[0]
+    precio = primera["precio"]
+    unidad = primera["unidad"]
+    en_oferta = 1 if any(v["en_oferta"] for v in variantes) else 0
 
     foto_actual = existente["foto"] if existente else None
     foto = foto_actual
-
     file = request.files.get("foto")
     if file and file.filename:
         if not allowed_file(file.filename):
-            flash("Formato de imagen no permitido. Usá JPG, PNG o WEBP.", "danger")
-            return render_template("producto_form.html", producto=existente, unidades=UNIDADES)
+            return render_form("Formato de imagen no permitido. Usá JPG, PNG o WEBP.")
         delete_image(foto_actual)
         foto = save_image(file)
 
@@ -233,14 +312,17 @@ def _guardar_producto(existente):
         )
         flash("Producto actualizado.", "success")
     else:
-        db.execute(
+        cur = db.execute(
             """INSERT INTO productos (nombre, descripcion, precio, foto, unidad,
                en_oferta, oferta_desde, oferta_hasta, activo)
                VALUES (?,?,?,?,?,?,?,?,?)""",
             (nombre, descripcion, precio, foto, unidad,
              en_oferta, oferta_desde, oferta_hasta, activo),
         )
+        pid = cur.lastrowid
         flash("Producto creado.", "success")
+
+    _guardar_variantes_db(pid, variantes, db)
     db.commit()
     db.close()
     return redirect(url_for("productos"))
@@ -264,11 +346,20 @@ def producto_borrar(pid):
 @login_required
 def toggle_oferta(pid):
     db = get_db()
-    row = db.execute("SELECT en_oferta FROM productos WHERE id=?", (pid,)).fetchone()
-    if row:
-        nuevo = 0 if row["en_oferta"] else 1
+    variantes = db.execute(
+        "SELECT id, en_oferta FROM variantes WHERE producto_id=?", (pid,)
+    ).fetchall()
+    if variantes:
+        any_on = any(v["en_oferta"] for v in variantes)
+        nuevo = 0 if any_on else 1
+        db.execute("UPDATE variantes SET en_oferta=? WHERE producto_id=?", (nuevo, pid))
         db.execute("UPDATE productos SET en_oferta=? WHERE id=?", (nuevo, pid))
-        db.commit()
+    else:
+        row = db.execute("SELECT en_oferta FROM productos WHERE id=?", (pid,)).fetchone()
+        if row:
+            nuevo = 0 if row["en_oferta"] else 1
+            db.execute("UPDATE productos SET en_oferta=? WHERE id=?", (nuevo, pid))
+    db.commit()
     db.close()
     return redirect(url_for("productos"))
 
@@ -365,19 +456,22 @@ def cliente_toggle(cid):
 @login_required
 def whatsapp_preview():
     db = get_db()
-    productos_oferta = db.execute(
-        "SELECT * FROM productos WHERE activo=1 AND en_oferta=1 ORDER BY nombre"
+    productos_all = db.execute(
+        "SELECT * FROM productos WHERE activo=1 ORDER BY nombre"
     ).fetchall()
     clientes_activos = db.execute(
         "SELECT * FROM clientes WHERE activo=1 ORDER BY nombre"
     ).fetchall()
+    ids = [p["id"] for p in productos_all]
+    variantes_by_prod = _get_variantes_bulk(ids, db)
     db.close()
 
-    hoy = date.today().isoformat()
     ofertas_hoy = []
-    for p in productos_oferta:
+    for p in productos_all:
         p = dict(p)
-        if oferta_activa(p):
+        variantes = variantes_by_prod.get(p["id"], [])
+        p["variantes"] = variantes
+        if oferta_activa(p, variantes):
             ofertas_hoy.append(p)
 
     mensaje = _generar_mensaje(ofertas_hoy)
@@ -394,12 +488,20 @@ def _generar_mensaje(ofertas):
         return "No hay productos en oferta hoy."
     lineas = ["🛍️ *¡Ofertas del día!* 🛍️", ""]
     for p in ofertas:
-        precio_fmt = f"${p['precio']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        u = (p.get("unidad") or "por unidad").replace("por ", "", 1)
         lineas.append(f"✅ *{p['nombre']}*")
         if p["descripcion"]:
             lineas.append(f"   {p['descripcion']}")
-        lineas.append(f"   💲 {precio_fmt} / {u}")
+        variantes = p.get("variantes") or []
+        if variantes:
+            for v in variantes:
+                precio_fmt = f"${v['precio']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                u = (v.get("unidad") or "por unidad").replace("por ", "", 1)
+                mark = " 🔥" if v.get("en_oferta") else ""
+                lineas.append(f"   💲 {precio_fmt} / {u}{mark}")
+        else:
+            precio_fmt = f"${p['precio']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            u = (p.get("unidad") or "por unidad").replace("por ", "", 1)
+            lineas.append(f"   💲 {precio_fmt} / {u}")
         lineas.append("")
     lineas.append("¡Contactame para hacer tu pedido! 😊")
     return "\n".join(lineas)
@@ -441,13 +543,11 @@ def _filas_csv(file_bytes):
 
 
 def _fingerprint(headers):
-    """Fingerprint estable basado en el conjunto de nombres de columna."""
     key = "|".join(sorted(h.strip().lower() for h in headers if h))
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
 def _auto_detectar(headers):
-    """Intenta mapear cada campo del sistema a la columna más probable del archivo."""
     PATRONES = {
         "nombre":      ("nombre", "producto", "name", "artículo", "articulo", "item"),
         "descripcion": ("descrip", "detalle", "detail", "observ", "nota", "comment"),
@@ -489,7 +589,6 @@ def _save_mapping_db(fingerprint, mapping):
 
 
 def _procesar_filas_con_mapping(data_rows, headers, field_to_col):
-    """Procesa filas usando el mapeo explícito {campo: nombre_columna}."""
     header_idx = {h: i for i, h in enumerate(headers)}
 
     def get_val(row, campo):
@@ -497,6 +596,12 @@ def _procesar_filas_con_mapping(data_rows, headers, field_to_col):
         if not col or col not in header_idx:
             return None
         idx = header_idx[col]
+        return row[idx] if idx < len(row) else None
+
+    def get_by_name(row, colname):
+        if colname not in header_idx:
+            return None
+        idx = header_idx[colname]
         return row[idx] if idx < len(row) else None
 
     if not field_to_col.get("nombre") or not field_to_col.get("precio"):
@@ -518,12 +623,21 @@ def _procesar_filas_con_mapping(data_rows, headers, field_to_col):
             errores.append(f"Fila {n} ({nombre!r}): precio inválido ({precio_raw!s}) — se omitió.")
             continue
 
+        # Variantes adicionales (columnas unidad2/precio2, unidad3/precio3, etc.)
+        extra_variantes = []
+        for i in range(2, 5):
+            precio_extra = _parsear_precio(get_by_name(row, f"precio{i}"))
+            if precio_extra is not None:
+                unidad_extra = _parsear_unidad(get_by_name(row, f"unidad{i}") or "")
+                extra_variantes.append({"unidad": unidad_extra, "precio": precio_extra, "en_oferta": 0})
+
         productos.append({
             "nombre": nombre,
             "descripcion": str(get_val(row, "descripcion") or "").strip(),
             "precio": precio,
             "en_oferta": _parsear_en_oferta(get_val(row, "en_oferta") or ""),
             "unidad": _parsear_unidad(get_val(row, "unidad") or ""),
+            "extra_variantes": extra_variantes,
         })
 
     return productos, errores
@@ -538,7 +652,12 @@ def _guardar_importados(productos):
                VALUES (?,?,?,?,?,1)""",
             (p["nombre"], p["descripcion"], p["precio"], p["unidad"], p["en_oferta"]),
         )
-        ids.append(cur.lastrowid)
+        pid = cur.lastrowid
+        ids.append(pid)
+        variantes = [{"unidad": p["unidad"], "precio": p["precio"], "en_oferta": p["en_oferta"], "orden": 0}]
+        for i, ev in enumerate(p.get("extra_variantes", []), start=1):
+            variantes.append({"unidad": ev["unidad"], "precio": ev["precio"], "en_oferta": 0, "orden": i})
+        _guardar_variantes_db(pid, variantes, db)
     db.commit()
     placeholders = ",".join("?" * len(ids))
     nuevos = [dict(r) for r in db.execute(
@@ -614,7 +733,6 @@ def productos_mapear():
     if request.method == "GET":
         saved = _get_saved_mapping(fingerprint)
         if saved:
-            # Descartar columnas guardadas que ya no existen en el archivo actual
             saved = {k: v for k, v in saved.items() if not v or v in headers}
         mapping = saved or _auto_detectar(headers)
         preview = cached["rows"][:5]
@@ -627,7 +745,6 @@ def productos_mapear():
             tiene_guardado=bool(saved),
         )
 
-    # POST: leer mapeo del formulario
     CAMPOS = ("nombre", "descripcion", "precio", "unidad", "en_oferta")
     field_to_col = {
         campo: request.form.get(f"map_{campo}", "").strip()
@@ -673,21 +790,21 @@ def productos_mapear():
 @app.route("/productos/plantilla")
 @login_required
 def productos_plantilla():
-    """Genera y descarga el archivo Excel de plantilla."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Productos"
 
-    # Estilos
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="0D6EFD")
     center = Alignment(horizontal="center", vertical="center")
     thin = Side(style="thin", color="CCCCCC")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    headers = ["nombre", "descripcion", "precio", "en_oferta", "unidad"]
-    labels  = ["Nombre *", "Descripción", "Precio *", "En oferta (sí/no)", "Unidad de venta"]
-    widths  = [30, 40, 14, 20, 22]
+    labels = [
+        "Nombre *", "Descripción", "Precio 1 *", "En oferta (sí/no)",
+        "Unidad 1", "Unidad 2", "Precio 2", "Unidad 3", "Precio 3",
+    ]
+    widths = [30, 35, 12, 18, 16, 14, 12, 14, 12]
 
     for col, (label, width) in enumerate(zip(labels, widths), start=1):
         cell = ws.cell(row=1, column=col, value=label)
@@ -699,23 +816,28 @@ def productos_plantilla():
 
     ws.row_dimensions[1].height = 22
 
-    # Filas de ejemplo
-    ejemplos = [
-        ("Empanadas de carne", "Rellenas con cebolla y huevo", 2500, "no",  "por unidad"),
-        ("Queso cremoso",      "Cremoso suave",                3800, "sí",  "por kg"),
-        ("Salame",             "Estacionado, picante",         4200, "no",  "por 100g"),
-        ("Medialunas",         "Con manteca, crocantes",       1200, "sí",  "por unidad"),
-        ("Queso en horma",     "Horma entera aprox. 3 kg",    11000, "no",  "por horma entera"),
-        ("Queso 1/4",          "Un cuarto de horma",           2800, "sí",  "por 1/4 kg"),
-    ]
     nota_fill = PatternFill("solid", fgColor="FFF9E6")
+    ejemplos = [
+        ("Empanadas de carne", "Docena, rellenas con cebolla y huevo",
+         2500, "no", "por unidad", None, None, None, None),
+        ("Queso cremoso", "Cremoso suave",
+         3500, "sí", "por kg", "por media horma", 8000, "por horma entera", 15000),
+        ("Salame", "Estacionado, picante",
+         4200, "no", "por 100g", None, None, None, None),
+        ("Medialunas", "Con manteca, crocantes",
+         1200, "sí", "por unidad", None, None, None, None),
+        ("Queso en horma", "Horma entera aprox. 3 kg",
+         11000, "no", "por horma entera", None, None, None, None),
+        ("Queso 1/4", "Un cuarto de horma",
+         2800, "sí", "por 1/4 kg", None, None, None, None),
+    ]
     for row_num, fila in enumerate(ejemplos, start=2):
         for col, val in enumerate(fila, start=1):
-            cell = ws.cell(row=row_num, column=col, value=val)
-            cell.fill = nota_fill
-            cell.border = border
+            if val is not None:
+                cell = ws.cell(row=row_num, column=col, value=val)
+                cell.fill = nota_fill
+                cell.border = border
 
-    # Hoja de instrucciones
     ws2 = wb.create_sheet("Instrucciones")
     unidades_str = " / ".join(UNIDADES)
     instrucciones = [
@@ -727,16 +849,21 @@ def productos_plantilla():
         ("Columna DESCRIPCIÓN:", True),
         ("  Descripción corta (opcional). Puede quedar en blanco.", False),
         ("", False),
-        ("Columna PRECIO (obligatorio):", True),
+        ("Columna PRECIO 1 (obligatorio):", True),
         ("  Número con punto o coma decimal. Ej: 1500 o 1500,50", False),
         ("", False),
         ("Columna EN OFERTA:", True),
         ('  Escribí "sí" o "no". También acepta: si / yes / 1 / no / 0.', False),
         ("", False),
-        ("Columna UNIDAD DE VENTA:", True),
+        ("Columna UNIDAD 1 (y UNIDAD 2, UNIDAD 3):", True),
         (f"  Opciones válidas: {unidades_str}", False),
         ("  También se aceptan abreviaturas: kg, 100g, 1/4, horma, media horma, etc.", False),
-        ("  Si dejás la celda vacía o escribís algo distinto, se usa 'por unidad'.", False),
+        ("  Si dejás vacío, se usa 'por unidad'.", False),
+        ("", False),
+        ("VARIANTES DE PRECIO:", True),
+        ("  Para agregar un segundo precio, completá UNIDAD 2 y PRECIO 2.", False),
+        ("  Para un tercero, completá UNIDAD 3 y PRECIO 3.", False),
+        ("  Ejemplo: Queso cremoso → $3500/kg, $8000/media horma, $15000/horma entera", False),
         ("", False),
         ("IMPORTANTE:", True),
         ("  - La primera fila DEBE ser el encabezado (no la borres).", False),

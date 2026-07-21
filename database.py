@@ -19,7 +19,7 @@ def init_db():
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre      TEXT    NOT NULL,
             descripcion TEXT    NOT NULL DEFAULT '',
-            precio      REAL    NOT NULL,
+            precio      REAL    NOT NULL DEFAULT 0,
             foto        TEXT,
             en_oferta   INTEGER NOT NULL DEFAULT 0,
             oferta_desde TEXT,
@@ -42,10 +42,34 @@ def init_db():
             mapping     TEXT    NOT NULL,
             updated_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
         );
+
+        CREATE TABLE IF NOT EXISTS variantes (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_id INTEGER NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
+            unidad      TEXT    NOT NULL DEFAULT 'por unidad',
+            precio      REAL    NOT NULL,
+            en_oferta   INTEGER NOT NULL DEFAULT 0,
+            orden       INTEGER NOT NULL DEFAULT 0
+        );
     """)
+
     # Migración: agregar columna unidad si no existe (bases de datos existentes)
     cols = {row[1] for row in conn.execute("PRAGMA table_info(productos)").fetchall()}
     if "unidad" not in cols:
         conn.execute("ALTER TABLE productos ADD COLUMN unidad TEXT NOT NULL DEFAULT 'por unidad'")
-    conn.commit()
+        conn.commit()
+
+    # Migración: crear variante inicial para productos existentes sin variantes
+    prods_sin_variantes = conn.execute("""
+        SELECT id, precio, unidad, en_oferta FROM productos
+        WHERE NOT EXISTS (SELECT 1 FROM variantes WHERE variantes.producto_id = productos.id)
+    """).fetchall()
+    if prods_sin_variantes:
+        for p in prods_sin_variantes:
+            conn.execute(
+                "INSERT INTO variantes (producto_id, precio, unidad, en_oferta, orden) VALUES (?,?,?,?,0)",
+                (p["id"], p["precio"] or 0, p["unidad"] or "por unidad", p["en_oferta"] or 0),
+            )
+        conn.commit()
+
     conn.close()

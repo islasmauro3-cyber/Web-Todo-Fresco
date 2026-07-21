@@ -28,10 +28,18 @@
              alt="{{ p.nombre }}">
         {% endif %}
         <div class="fw-semibold small">{{ p.nombre }}</div>
+        {% for v in p.variantes %}
+        <div class="lh-sm small fw-bold {% if v.en_oferta %}text-danger{% else %}text-primary{% endif %}">
+          ${{ "%.2f"|format(v.precio) }}
+          <span class="text-muted fw-normal">/ {{ v.unidad|unidad_corta }}</span>
+          {% if v.en_oferta %}<i class="bi bi-tag-fill text-danger" style="font-size:.65rem;"></i>{% endif %}
+        </div>
+        {% else %}
         <div class="text-primary fw-bold small">
-            ${{ "%.2f"|format(p.precio) }}
-            <span class="text-muted fw-normal">/ {{ p.unidad|unidad_corta }}</span>
-          </div>
+          ${{ "%.2f"|format(p.precio) }}
+          <span class="text-muted fw-normal">/ {{ p.unidad|unidad_corta }}</span>
+        </div>
+        {% endfor %}
       </div>
     </div>
     {% endfor %}

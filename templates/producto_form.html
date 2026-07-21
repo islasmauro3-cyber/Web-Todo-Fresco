@@ -53,55 +53,52 @@
               placeholder="Ej: Docena, rellenas con cebolla y huevo">{{ producto.descripcion if producto else '' }}</textarea>
   </div>
 
-  <div class="row g-2 mb-3">
-    <div class="col-7">
-      <label class="form-label fw-semibold">Precio <span class="text-danger">*</span></label>
-      <div class="input-group">
-        <span class="input-group-text">$</span>
-        <input type="number" name="precio" class="form-control"
-               value="{{ producto.precio if producto else '' }}"
-               step="0.01" min="0" placeholder="0.00" required>
+  <hr>
+
+  <!-- Precios y presentaciones -->
+  <div class="mb-3">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <div>
+        <h6 class="fw-semibold mb-0">
+          <i class="bi bi-tags me-1 text-primary"></i>Precios y presentaciones
+        </h6>
+        <p class="text-muted small mb-0">Cada fila es un precio con su unidad de venta.</p>
       </div>
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="agregarVariante()">
+        <i class="bi bi-plus-lg me-1"></i>Agregar
+      </button>
     </div>
-    <div class="col-5">
-      <label class="form-label fw-semibold">Unidad</label>
-      <select name="unidad" class="form-select">
-        {% for u in unidades %}
-        <option value="{{ u }}"
-          {% if producto and producto.unidad == u %}selected
-          {% elif not producto and u == 'por unidad' %}selected
-          {% endif %}>{{ u }}</option>
-        {% endfor %}
-      </select>
+
+    <div id="variantesContainer"></div>
+
+    <div id="variantesVacio" class="text-center text-muted small py-3 border rounded d-none">
+      <i class="bi bi-exclamation-circle me-1"></i>
+      Agregá al menos un precio para guardar el producto.
     </div>
   </div>
 
   <hr>
 
-  <div class="mb-2">
-    <div class="form-check form-switch">
-      <input type="checkbox" name="en_oferta" id="enOferta" class="form-check-input"
-             {% if producto and producto.en_oferta %}checked{% endif %}>
-      <label class="form-check-label fw-semibold" for="enOferta">
-        <i class="bi bi-tag-fill text-warning me-1"></i>En oferta
-      </label>
-    </div>
-  </div>
-
-  <div id="ofertaFechas" class="{% if not (producto and producto.en_oferta) %}d-none{% endif %}">
-    <div class="row g-2 mb-2">
+  <!-- Período de oferta -->
+  <div class="mb-3">
+    <p class="form-label fw-semibold small mb-1">
+      <i class="bi bi-calendar-range me-1 text-secondary"></i>Período de oferta (opcional)
+    </p>
+    <div class="row g-2">
       <div class="col-6">
-        <label class="form-label small">Desde</label>
+        <label class="form-label small mb-1">Desde</label>
         <input type="date" name="oferta_desde" class="form-control form-control-sm"
                value="{{ producto.oferta_desde if producto else '' }}">
       </div>
       <div class="col-6">
-        <label class="form-label small">Hasta</label>
+        <label class="form-label small mb-1">Hasta</label>
         <input type="date" name="oferta_hasta" class="form-control form-control-sm"
                value="{{ producto.oferta_hasta if producto else '' }}">
       </div>
     </div>
-    <p class="text-muted small mb-0">Dejá las fechas vacías para que la oferta no tenga límite.</p>
+    <p class="form-text mt-1">
+      Dejá vacío para que la oferta no tenga límite de fechas.
+    </p>
   </div>
 
   <hr>
@@ -126,12 +123,77 @@
 
 {% block scripts %}
 <script>
-// Mostrar/ocultar fechas de oferta
-document.getElementById('enOferta').addEventListener('change', function() {
-  document.getElementById('ofertaFechas').classList.toggle('d-none', !this.checked);
-});
+const UNIDADES = {{ unidades | tojson }};
+const variantesIniciales = {{ variantes_form | tojson }};
+let varianteIdx = 0;
 
-// Vista previa de imagen antes de subir
+function varianteHTML(idx, unidad, precio, enOferta) {
+  const opts = UNIDADES.map(u =>
+    `<option value="${u}"${u === unidad ? ' selected' : ''}>${u}</option>`
+  ).join('');
+  const precioVal = (precio !== null && precio !== undefined && precio !== '') ? precio : '';
+  return `
+<div class="variante-row border rounded p-2 mb-2" id="var-${idx}">
+  <div class="d-flex align-items-start gap-2">
+    <div class="flex-grow-1">
+      <div class="row g-2 align-items-end">
+        <div class="col-5">
+          <label class="form-label small fw-semibold mb-1">Unidad</label>
+          <select name="variante_unidad_${idx}" class="form-select form-select-sm">
+            ${opts}
+          </select>
+        </div>
+        <div class="col-4">
+          <label class="form-label small fw-semibold mb-1">Precio</label>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">$</span>
+            <input type="number" name="variante_precio_${idx}" class="form-control"
+                   step="0.01" min="0" placeholder="0.00" value="${precioVal}">
+          </div>
+        </div>
+        <div class="col-3 d-flex align-items-end" style="padding-bottom:2px;">
+          <div class="form-check mb-0">
+            <input type="checkbox" name="variante_oferta_${idx}"
+                   id="var_oferta_${idx}" class="form-check-input"
+                   ${enOferta ? 'checked' : ''}>
+            <label class="form-check-label small" for="var_oferta_${idx}">
+              <i class="bi bi-tag-fill text-warning"></i> Oferta
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="btn btn-outline-danger btn-sm flex-shrink-0"
+            style="margin-top:22px;" onclick="eliminarVariante(${idx})" title="Quitar">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+</div>`;
+}
+
+function agregarVariante(unidad, precio, enOferta) {
+  const idx = varianteIdx++;
+  document.getElementById('variantesContainer')
+    .insertAdjacentHTML('beforeend', varianteHTML(idx, unidad || UNIDADES[0], precio, enOferta || false));
+  actualizarEstado();
+}
+
+function eliminarVariante(idx) {
+  const el = document.getElementById(`var-${idx}`);
+  if (el) el.remove();
+  actualizarEstado();
+}
+
+function actualizarEstado() {
+  const rows = document.querySelectorAll('.variante-row');
+  document.getElementById('variantesVacio').classList.toggle('d-none', rows.length > 0);
+}
+
+variantesIniciales.forEach(v => agregarVariante(v.unidad, v.precio, v.en_oferta));
+if (variantesIniciales.length === 0) agregarVariante(UNIDADES[0], '', false);
+actualizarEstado();
+
+// Vista previa de imagen
 document.getElementById('fotoInput').addEventListener('change', function() {
   const file = this.files[0];
   if (!file) return;

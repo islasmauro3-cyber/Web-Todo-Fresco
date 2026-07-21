@@ -56,10 +56,22 @@
         {% if p.descripcion %}
         <p class="text-muted mb-1" style="font-size:.75rem;">{{ p.descripcion }}</p>
         {% endif %}
-        <p class="fw-bold text-primary mb-2">
-          ${{ "%.2f"|format(p.precio) }}
-          <span class="text-muted fw-normal" style="font-size:.8rem;">/ {{ p.unidad|unidad_corta }}</span>
-        </p>
+        <div class="mb-2">
+          {% for v in p.variantes %}
+          <div class="lh-sm" style="font-size:.82rem;">
+            <span class="fw-bold {% if v.en_oferta %}text-danger{% else %}text-primary{% endif %}">
+              ${{ "%.2f"|format(v.precio) }}
+            </span>
+            <span class="text-muted">/ {{ v.unidad|unidad_corta }}</span>
+            {% if v.en_oferta %}<i class="bi bi-tag-fill text-danger" style="font-size:.65rem;"></i>{% endif %}
+          </div>
+          {% else %}
+          <p class="fw-bold text-primary mb-0" style="font-size:.85rem;">
+            ${{ "%.2f"|format(p.precio) }}
+            <span class="text-muted fw-normal" style="font-size:.8rem;">/ {{ p.unidad|unidad_corta }}</span>
+          </p>
+          {% endfor %}
+        </div>
 
         <div class="d-flex gap-1 flex-wrap">
           <a href="{{ url_for('producto_editar', pid=p.id) }}"
