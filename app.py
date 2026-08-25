@@ -33,10 +33,12 @@ MAX_IMAGE_SIZE = (800, 800)
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "admin123")
 
 # ── Twilio config ──────────────────────────────────────────────────────────────
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN  = os.environ.get("TWILIO_AUTH_TOKEN", "")
-TWILIO_WA_FROM     = os.environ.get("TWILIO_WA_FROM", "")      # whatsapp:+17372508034
-TWILIO_WA_OWNER    = os.environ.get("TWILIO_WA_OWNER", "")     # owner's personal number
+TWILIO_ACCOUNT_SID  = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN   = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_WA_FROM      = os.environ.get("TWILIO_WA_FROM", "")      # whatsapp:+17372508034
+TWILIO_WA_OWNER     = os.environ.get("TWILIO_WA_OWNER", "")     # owner's personal number
+# SID de la plantilla Twilio para mensajes iniciados (sandbox: "Marketing Promotions")
+TWILIO_CONTENT_SID  = os.environ.get("TWILIO_CONTENT_SID", "HXb5b62575e6e4ff6129ad7c8efe01a50f")
 
 UNIDADES = [
     "por kg",
@@ -496,6 +498,7 @@ def whatsapp_preview():
         twilio_ok=_twilio_configurado(),
         twilio_owner=TWILIO_WA_OWNER,
         total_clientes=total_clientes,
+        content_sid=TWILIO_CONTENT_SID,
     )
 
 
