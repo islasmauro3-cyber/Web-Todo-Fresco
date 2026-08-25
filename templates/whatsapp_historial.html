@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Historial de envíos – Mis Ventas{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ url_for('whatsapp_preview') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <h5 class="fw-bold mb-0">
+      <i class="bi bi-clock-history me-2 text-secondary"></i>Historial de envíos
+    </h5>
+  </div>
+  <span class="badge bg-secondary">{{ envios|length }} registro{{ 's' if envios|length != 1 else '' }}</span>
+</div>
+
+{% if not envios %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-inbox" style="font-size:3rem;"></i>
+  <p class="mt-2">Todavía no se envió ningún mensaje.</p>
+</div>
+{% else %}
+
+<!-- Resumen rápido -->
+{% set total_env = envios | selectattr('estado', 'eq', 'enviado') | list | length %}
+{% set total_fall = envios | selectattr('estado', 'eq', 'fallido') | list | length %}
+<div class="row g-2 mb-3">
+  <div class="col-6">
+    <div class="card border-0 bg-success bg-opacity-10 text-center py-2">
+      <div class="fw-bold text-success fs-4">{{ total_env }}</div>
+      <div class="small text-muted">Enviados</div>
+    </div>
+  </div>
+  <div class="col-6">
+    <div class="card border-0 bg-danger bg-opacity-10 text-center py-2">
+      <div class="fw-bold text-danger fs-4">{{ total_fall }}</div>
+      <div class="small text-muted">Fallidos</div>
+    </div>
+  </div>
+</div>
+
+<!-- Filtros -->
+<div class="btn-group btn-group-sm w-100 mb-3" id="filtroBtn">
+  <button type="button" class="btn btn-outline-secondary active" data-filter="todos">Todos</button>
+  <button type="button" class="btn btn-outline-secondary" data-filter="enviado">Enviados</button>
+  <button type="button" class="btn btn-outline-secondary" data-filter="fallido">Fallidos</button>
+  <button type="button" class="btn btn-outline-secondary" data-filter="prueba">Pruebas</button>
+</div>
+
+<!-- Tabla / lista de envíos -->
+<div class="form-card p-0 overflow-hidden">
+  <ul class="list-group list-group-flush" id="listaEnvios">
+    {% for e in envios %}
+    <li class="list-group-item py-2 px-3 envio-item
+        {% if e.es_prueba %}es-prueba{% endif %}
+        estado-{{ e.estado }}"
+        style="font-size:.85rem;">
+
+      <div class="d-flex align-items-start gap-2">
+        <!-- Estado chip -->
+        <div class="flex-shrink-0 pt-1">
+          {% if e.estado == 'enviado' %}
+          <span class="badge bg-success">✓ Enviado</span>
+          {% elif e.estado == 'fallido' %}
+          <span class="badge bg-danger">✗ Fallido</span>
+          {% else %}
+          <span class="badge bg-secondary">{{ e.estado }}</span>
+          {% endif %}
+          {% if e.es_prueba %}
+          <span class="badge bg-warning text-dark ms-1">Prueba</span>
+          {% endif %}
+        </div>
+
+        <!-- Info -->
+        <div class="flex-grow-1 min-w-0">
+          <div class="fw-semibold">
+            {{ e.cliente_nombre }}
+            <span class="text-muted fw-normal">{{ e.celular }}</span>
+          </div>
+          <div class="text-muted" style="font-size:.75rem;">{{ e.created_at }}</div>
+
+          {% if e.error_msg %}
+          <div class="text-danger small mt-1">
+            <i class="bi bi-exclamation-triangle me-1"></i>{{ e.error_msg }}
+          </div>
+          {% endif %}
+
+          <!-- Mensaje expandible -->
+          <details class="mt-1">
+            <summary class="text-muted" style="font-size:.75rem; cursor:pointer;">
+              Ver mensaje
+            </summary>
+            <pre class="mt-1 p-2 bg-light rounded small" style="white-space:pre-wrap; font-size:.72rem;">{{ e.mensaje }}</pre>
+          </details>
+        </div>
+
+        <!-- SID -->
+        {% if e.twilio_sid %}
+        <div class="flex-shrink-0 text-end" style="font-size:.7rem;">
+          <code class="text-muted">{{ e.twilio_sid[:12] }}…</code>
+        </div>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('#filtroBtn button').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('#filtroBtn button').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    const f = this.dataset.filter;
+    document.querySelectorAll('.envio-item').forEach(el => {
+      if (f === 'todos') { el.style.display = ''; }
+      else if (f === 'prueba') { el.style.display = el.classList.contains('es-prueba') ? '' : 'none'; }
+      else { el.style.display = el.classList.contains(`estado-${f}`) ? '' : 'none'; }
+    });
+  });
+});
+</script>
+{% endblock %}

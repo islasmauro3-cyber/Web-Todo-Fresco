@@ -2,11 +2,15 @@ import os
 import re
 import csv
 import io
+import time
 import uuid
 import hashlib
 import json
 from datetime import datetime, date
 from functools import wraps
+
+from dotenv import load_dotenv
+load_dotenv()
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -27,6 +31,12 @@ ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
 MAX_IMAGE_SIZE = (800, 800)
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "admin123")
+
+# ── Twilio config ──────────────────────────────────────────────────────────────
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN  = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_WA_FROM     = os.environ.get("TWILIO_WA_FROM", "")      # whatsapp:+17372508034
+TWILIO_WA_OWNER    = os.environ.get("TWILIO_WA_OWNER", "")     # owner's personal number
 
 UNIDADES = [
     "por kg",
@@ -474,12 +484,18 @@ def whatsapp_preview():
         if oferta_activa(p, variantes):
             ofertas_hoy.append(p)
 
-    mensaje = _generar_mensaje(ofertas_hoy)
+    mensaje_base = _generar_mensaje(ofertas_hoy)
+    mensaje_tpl = f"Hola {{{{nombre}}}}! 👋\n\n{mensaje_base}"
+    total_clientes = len(clientes_activos)
     return render_template(
         "whatsapp_preview.html",
         ofertas=ofertas_hoy,
         clientes=clientes_activos,
-        mensaje=mensaje,
+        mensaje=mensaje_base,
+        mensaje_tpl=mensaje_tpl,
+        twilio_ok=_twilio_configurado(),
+        twilio_owner=TWILIO_WA_OWNER,
+        total_clientes=total_clientes,
     )
 
 
@@ -505,6 +521,139 @@ def _generar_mensaje(ofertas):
         lineas.append("")
     lineas.append("¡Contactame para hacer tu pedido! 😊")
     return "\n".join(lineas)
+
+
+# ── Twilio / WhatsApp envío ───────────────────────────────────────────────────
+
+def _twilio_configurado():
+    return bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_WA_FROM)
+
+
+def _get_twilio_client():
+    if not _twilio_configurado():
+        return None
+    from twilio.rest import Client
+    return Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+
+def _enviar_whatsapp(celular, mensaje):
+    """Envía un mensaje WA. Devuelve (sid, None) o (None, error_str)."""
+    client = _get_twilio_client()
+    if not client:
+        return None, "Twilio no está configurado."
+    numero = re.sub(r"[^\d+]", "", celular)
+    if not numero.startswith("+"):
+        numero = "+" + numero
+    try:
+        msg = client.messages.create(
+            from_=TWILIO_WA_FROM,
+            to=f"whatsapp:{numero}",
+            body=mensaje,
+        )
+        return msg.sid, None
+    except Exception as e:
+        return None, str(e)
+
+
+def _guardar_envio(db, batch_id, cliente_id, cliente_nombre, celular,
+                   mensaje, twilio_sid, estado, error_msg, es_prueba):
+    db.execute(
+        """INSERT INTO envios
+           (batch_id, cliente_id, cliente_nombre, celular, mensaje,
+            twilio_sid, estado, error_msg, es_prueba)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (batch_id, cliente_id, cliente_nombre, celular, mensaje,
+         twilio_sid, estado, error_msg, es_prueba),
+    )
+
+
+@app.route("/whatsapp/enviar-prueba", methods=["POST"])
+@login_required
+def whatsapp_enviar_prueba():
+    if not _twilio_configurado():
+        flash("Configurá las variables de Twilio antes de enviar.", "danger")
+        return redirect(url_for("whatsapp_preview"))
+
+    mensaje_tpl = request.form.get("mensaje", "").strip()
+    if not mensaje_tpl:
+        flash("El mensaje está vacío.", "danger")
+        return redirect(url_for("whatsapp_preview"))
+
+    if not TWILIO_WA_OWNER:
+        flash("No hay número de prueba configurado (TWILIO_WA_OWNER).", "danger")
+        return redirect(url_for("whatsapp_preview"))
+
+    mensaje = mensaje_tpl.replace("{nombre}", "Prueba")
+    sid, error = _enviar_whatsapp(TWILIO_WA_OWNER, mensaje)
+
+    db = get_db()
+    _guardar_envio(db, None, None, "PRUEBA", TWILIO_WA_OWNER,
+                   mensaje, sid, "enviado" if sid else "fallido", error, 1)
+    db.commit()
+    db.close()
+
+    if error:
+        flash(f"Error al enviar prueba: {error}", "danger")
+    else:
+        flash(f"Mensaje de prueba enviado a {TWILIO_WA_OWNER}. ✅", "success")
+    return redirect(url_for("whatsapp_preview"))
+
+
+@app.route("/whatsapp/enviar-todos", methods=["POST"])
+@login_required
+def whatsapp_enviar_todos():
+    if not _twilio_configurado():
+        flash("Configurá las variables de Twilio antes de enviar.", "danger")
+        return redirect(url_for("whatsapp_preview"))
+
+    mensaje_tpl = request.form.get("mensaje", "").strip()
+    if not mensaje_tpl:
+        flash("El mensaje está vacío.", "danger")
+        return redirect(url_for("whatsapp_preview"))
+
+    db = get_db()
+    clientes = [dict(r) for r in
+                db.execute("SELECT * FROM clientes WHERE activo=1 ORDER BY nombre").fetchall()]
+
+    if not clientes:
+        db.close()
+        flash("No hay clientes activos para enviar.", "warning")
+        return redirect(url_for("whatsapp_preview"))
+
+    batch_id = uuid.uuid4().hex
+    enviados = fallidos = 0
+
+    for c in clientes:
+        mensaje = mensaje_tpl.replace("{nombre}", c["nombre"])
+        sid, error = _enviar_whatsapp(c["celular"], mensaje)
+        estado = "enviado" if sid else "fallido"
+        _guardar_envio(db, batch_id, c["id"], c["nombre"], c["celular"],
+                       mensaje, sid, estado, error, 0)
+        if sid:
+            enviados += 1
+        else:
+            fallidos += 1
+        time.sleep(0.3)
+
+    db.commit()
+    db.close()
+
+    if fallidos == 0:
+        flash(f"✅ Mensajes enviados a {enviados} cliente(s).", "success")
+    else:
+        flash(f"Enviados: {enviados} | Fallidos: {fallidos}", "warning")
+    return redirect(url_for("whatsapp_historial"))
+
+
+@app.route("/whatsapp/historial")
+@login_required
+def whatsapp_historial():
+    db = get_db()
+    envios = [dict(r) for r in db.execute(
+        "SELECT * FROM envios ORDER BY created_at DESC LIMIT 300"
+    ).fetchall()]
+    db.close()
+    return render_template("whatsapp_historial.html", envios=envios)
 
 
 # ── Importación masiva ────────────────────────────────────────────────────────

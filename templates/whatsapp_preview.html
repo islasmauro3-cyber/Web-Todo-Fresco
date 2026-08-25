@@ -2,9 +2,14 @@
 {% block title %}Vista previa WhatsApp – Mis Ventas{% endblock %}
 
 {% block content %}
-<h5 class="fw-bold mb-3">
-  <i class="bi bi-whatsapp me-2" style="color:#25D366;"></i>Vista previa del mensaje
-</h5>
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h5 class="fw-bold mb-0">
+    <i class="bi bi-whatsapp me-2" style="color:#25D366;"></i>WhatsApp
+  </h5>
+  <a href="{{ url_for('whatsapp_historial') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-clock-history me-1"></i>Historial
+  </a>
+</div>
 
 {% if not ofertas %}
 <div class="alert alert-info">
@@ -14,11 +19,13 @@
 {% else %}
 
 <!-- Productos en oferta hoy -->
-<div class="form-card mb-4">
-  <h6 class="fw-semibold mb-3">
-    <i class="bi bi-tag-fill text-danger me-1"></i>Productos en oferta hoy ({{ ofertas|length }})
-  </h6>
-  <div class="row g-2">
+<div class="form-card mb-3 p-0 overflow-hidden">
+  <div class="px-3 py-2 bg-light border-bottom">
+    <span class="fw-semibold small">
+      <i class="bi bi-tag-fill text-danger me-1"></i>Productos en oferta hoy ({{ ofertas|length }})
+    </span>
+  </div>
+  <div class="row g-2 p-2">
     {% for p in ofertas %}
     <div class="col-6 col-md-4">
       <div class="card border-0 bg-light p-2 rounded-3">
@@ -27,12 +34,14 @@
              class="rounded mb-1" style="width:100%; height:80px; object-fit:cover;"
              alt="{{ p.nombre }}">
         {% endif %}
-        <div class="fw-semibold small">{{ p.nombre }}</div>
+        <div class="fw-semibold small lh-sm">{{ p.nombre }}</div>
         {% for v in p.variantes %}
-        <div class="lh-sm small fw-bold {% if v.en_oferta %}text-danger{% else %}text-primary{% endif %}">
-          ${{ "%.2f"|format(v.precio) }}
-          <span class="text-muted fw-normal">/ {{ v.unidad|unidad_corta }}</span>
-          {% if v.en_oferta %}<i class="bi bi-tag-fill text-danger" style="font-size:.65rem;"></i>{% endif %}
+        <div class="lh-sm" style="font-size:.75rem;">
+          <span class="{% if v.en_oferta %}text-danger fw-bold{% else %}text-primary{% endif %}">
+            ${{ "%.2f"|format(v.precio) }}
+          </span>
+          <span class="text-muted">/ {{ v.unidad|unidad_corta }}</span>
+          {% if v.en_oferta %}<i class="bi bi-tag-fill text-danger" style="font-size:.6rem;"></i>{% endif %}
         </div>
         {% else %}
         <div class="text-primary fw-bold small">
@@ -46,77 +55,143 @@
   </div>
 </div>
 
-<!-- Vista previa del mensaje -->
-<div class="form-card mb-4">
-  <h6 class="fw-semibold mb-3">
-    <i class="bi bi-chat-dots me-1"></i>Mensaje generado
-  </h6>
-  <div class="wa-screen mb-3">
-    <div class="wa-bubble">{{ mensaje }}</div>
-  </div>
-
-  <div class="mb-3">
-    <label class="form-label fw-semibold small">Editar mensaje (opcional)</label>
-    <textarea id="mensajeEditable" class="form-control font-monospace"
-              rows="10">{{ mensaje }}</textarea>
-  </div>
-
-  <button class="btn btn-outline-secondary btn-sm mb-3" onclick="actualizarBurbuja()">
-    <i class="bi bi-eye me-1"></i>Actualizar vista previa
-  </button>
+<!-- Envío con Twilio -->
+{% if not twilio_ok %}
+<div class="alert alert-warning mb-3">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  <strong>Twilio no configurado.</strong> Definí las variables
+  <code>TWILIO_ACCOUNT_SID</code>, <code>TWILIO_AUTH_TOKEN</code>,
+  <code>TWILIO_WA_FROM</code> y <code>TWILIO_WA_OWNER</code>
+  en Railway (o en el archivo <code>.env</code> para desarrollo local).
 </div>
+{% endif %}
 
-<!-- Enviar a clientes -->
-<div class="form-card">
-  <h6 class="fw-semibold mb-3">
-    <i class="bi bi-send me-1"></i>Enviar a un cliente
+<div class="form-card mb-3">
+  <h6 class="fw-semibold mb-1">
+    <i class="bi bi-send me-1 text-success"></i>Enviar mensaje
   </h6>
+  <p class="text-muted small mb-3">
+    Usá <code>{nombre}</code> para personalizar con el nombre de cada cliente.
+    El resto del mensaje se envía igual a todos.
+  </p>
 
-  {% if clientes %}
-  <div class="mb-3">
-    <input type="search" id="buscarCliente" class="form-control mb-2"
-           placeholder="Buscar cliente…">
-    <div style="max-height:260px; overflow-y:auto;" id="listaClientes">
-      {% for c in clientes %}
-      <div class="cliente-wa d-flex align-items-center justify-content-between
-                  py-2 px-1 border-bottom">
-        <div>
-          <div class="fw-semibold small">{{ c.nombre }}</div>
-          <div class="text-muted" style="font-size:.75rem;">{{ c.celular }}</div>
-        </div>
-        <button class="btn btn-sm" style="background:#25D366; color:#fff; border:none;"
-                onclick="enviarWA('{{ c.celular }}')">
-          <i class="bi bi-whatsapp"></i> Enviar
+  <form method="post" id="sendForm">
+
+    <!-- Variables disponibles -->
+    <div class="mb-2 d-flex flex-wrap gap-1 align-items-center">
+      <span class="text-muted small me-1">Variables:</span>
+      <button type="button" class="badge bg-primary border-0 text-decoration-none"
+              onclick="insertarVar('{nombre}')">
+        {nombre}
+      </button>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold small mb-1">Mensaje</label>
+      <textarea id="mensajeTpl" name="mensaje" class="form-control font-monospace"
+                rows="12" style="font-size:.82rem;">{{ mensaje_tpl }}</textarea>
+    </div>
+
+    <!-- Vista previa burbuja -->
+    <div class="mb-3">
+      <button type="button" class="btn btn-outline-secondary btn-sm mb-2"
+              onclick="actualizarBurbuja()">
+        <i class="bi bi-eye me-1"></i>Actualizar vista previa
+      </button>
+      <div class="wa-screen">
+        <div class="wa-bubble" id="waBurbuja">{{ mensaje_tpl }}</div>
+      </div>
+    </div>
+
+    <!-- Botones de envío -->
+    <div class="row g-2">
+      <div class="col-12 col-md-6">
+        <button type="submit" formaction="{{ url_for('whatsapp_enviar_prueba') }}"
+                class="btn btn-outline-success w-100 {% if not twilio_ok %}disabled{% endif %}"
+                {% if twilio_ok %}
+                onclick="return confirm('¿Enviar mensaje de prueba a {{ twilio_owner }}?')"
+                {% endif %}>
+          <i class="bi bi-send-check me-1"></i>
+          Prueba a mi número
+          {% if twilio_owner %}<small class="d-block text-muted">{{ twilio_owner }}</small>{% endif %}
         </button>
       </div>
-      {% endfor %}
+      <div class="col-12 col-md-6">
+        <button type="submit" formaction="{{ url_for('whatsapp_enviar_todos') }}"
+                class="btn btn-success w-100 {% if not twilio_ok or total_clientes == 0 %}disabled{% endif %}"
+                {% if twilio_ok and total_clientes > 0 %}
+                onclick="return confirm('¿Enviar a los {{ total_clientes }} clientes activos?\n\nVerificá primero con la prueba que el mensaje llega bien.')"
+                {% endif %}>
+          <i class="bi bi-people-fill me-1"></i>
+          Enviar a todos ({{ total_clientes }})
+        </button>
+      </div>
     </div>
+
+  </form>
+
+  {% if twilio_ok %}
+  <div class="alert alert-info py-2 small mt-3 mb-0">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>Sandbox:</strong> tus clientes deben haber enviado el mensaje de activación al número
+    <strong>{{ twilio_owner or 'configurado' }}</strong> antes de poder recibir mensajes.
   </div>
-  {% else %}
-  <p class="text-muted small">
-    Aún no tenés clientes activos.
-    <a href="{{ url_for('cliente_nuevo') }}">Agregá uno</a>.
-  </p>
   {% endif %}
 </div>
+
+<!-- Lista de clientes (manual wa.me) -->
+{% if clientes %}
+<div class="form-card">
+  <h6 class="fw-semibold mb-2">
+    <i class="bi bi-whatsapp me-1" style="color:#25D366;"></i>Envío manual por cliente
+  </h6>
+  <input type="search" id="buscarCliente" class="form-control form-control-sm mb-2"
+         placeholder="Buscar cliente…">
+  <div style="max-height:260px; overflow-y:auto;" id="listaClientes">
+    {% for c in clientes %}
+    <div class="cliente-wa d-flex align-items-center justify-content-between
+                py-2 px-1 border-bottom">
+      <div>
+        <div class="fw-semibold small">{{ c.nombre }}</div>
+        <div class="text-muted" style="font-size:.75rem;">{{ c.celular }}</div>
+      </div>
+      <button class="btn btn-sm" style="background:#25D366; color:#fff; border:none;"
+              onclick="enviarWA('{{ c.celular }}')">
+        <i class="bi bi-whatsapp"></i>
+      </button>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
 function getMensaje() {
-  return document.getElementById('mensajeEditable')?.value || '';
+  return document.getElementById('mensajeTpl')?.value || '';
 }
 
 function actualizarBurbuja() {
-  document.querySelector('.wa-bubble').textContent = getMensaje();
+  document.getElementById('waBurbuja').textContent = getMensaje();
+}
+
+function insertarVar(variable) {
+  const ta = document.getElementById('mensajeTpl');
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  ta.value = ta.value.slice(0, start) + variable + ta.value.slice(end);
+  ta.selectionStart = ta.selectionEnd = start + variable.length;
+  ta.focus();
 }
 
 function enviarWA(celular) {
-  const msg = getMensaje();
+  const msg = getMensaje().replace('{nombre}', '');
   const num = celular.replace(/\D/g, '');
-  const url = `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
-  window.open(url, '_blank');
+  window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
 }
 
 const buscarCliente = document.getElementById('buscarCliente');

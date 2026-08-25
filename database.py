@@ -51,6 +51,20 @@ def init_db():
             en_oferta   INTEGER NOT NULL DEFAULT 0,
             orden       INTEGER NOT NULL DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS envios (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id        TEXT,
+            cliente_id      INTEGER,
+            cliente_nombre  TEXT    NOT NULL,
+            celular         TEXT    NOT NULL,
+            mensaje         TEXT    NOT NULL,
+            twilio_sid      TEXT,
+            estado          TEXT    NOT NULL DEFAULT 'pendiente',
+            error_msg       TEXT,
+            es_prueba       INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+        );
     """)
 
     # Migración: agregar columna unidad si no existe (bases de datos existentes)
