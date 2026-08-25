@@ -107,15 +107,17 @@
     <div class="mb-3">
       <details id="plantillaDetails">
         <summary class="fw-semibold small text-muted" style="cursor:pointer; user-select:none;">
-          <i class="bi bi-file-earmark-text me-1"></i>Plantilla Twilio (requerida en sandbox)
-          <span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">Sandbox</span>
+          <i class="bi bi-file-earmark-text me-1"></i>Plantilla Twilio
+          <span class="badge bg-secondary ms-1" style="font-size:.65rem;">Opcional / Sandbox</span>
         </summary>
         <div class="mt-2 p-2 bg-light rounded">
-          <p class="small text-muted mb-2">
-            El sandbox de Twilio requiere una plantilla aprobada para mensajes iniciados
-            por el negocio. Tu mensaje completo se envía como la variable
-            <code>{{'{{'}}1{{'}}'}}</code> de la plantilla seleccionada.
-          </p>
+          <div class="alert alert-info py-2 small mb-2">
+            <strong>Mensaje libre funciona si</strong> el destinatario ya envió el código
+            de activación al número del sandbox (escribir <code>join [keyword]</code> al
+            <strong>+17372508034</strong> por WhatsApp).
+            Si ves el error "ContentSid requerido", usá esta sección para seleccionar
+            una plantilla aprobada.
+          </div>
           <div class="d-flex gap-2 mb-2">
             <button type="button" class="btn btn-outline-secondary btn-sm"
                     onclick="cargarPlantillas(this)">
@@ -229,6 +231,14 @@ function enviarWA(celular) {
   const num = celular.replace(/\D/g, '');
   window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
 }
+
+// Auto-expand template section when there's an error (e.g. ContentSid required)
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.querySelector('.alert-danger')) {
+    const details = document.getElementById('plantillaDetails');
+    if (details) details.open = true;
+  }
+});
 
 async function cargarPlantillas(btn) {
   const container = document.getElementById('plantillasList');

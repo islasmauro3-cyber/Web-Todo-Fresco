@@ -563,6 +563,28 @@ def _enviar_whatsapp(celular, mensaje, content_sid=None, content_variables=None)
         return None, str(e)
 
 
+def _twilio_error_legible(error_str):
+    """Traduce errores comunes de Twilio a mensajes en español con instrucciones."""
+    if not error_str:
+        return error_str
+    e = error_str.lower()
+    if "contentsid" in e or "content_sid" in e or "63016" in e or " mbs " in e:
+        return (
+            "El sandbox requiere una plantilla aprobada (ContentSid). "
+            "Solución rápida: enviá el mensaje de activación al número del sandbox "
+            "desde el destinatario (+5491161394159 → escribe 'join [keyword]' al "
+            "+17372508034) para abrir la ventana de 24 h. "
+            "O ingresá un Content SID de plantilla en el panel (sección 'Plantilla Twilio')."
+        )
+    if "21211" in e or "not a valid whatsapp" in e:
+        return "Número no válido para WhatsApp o no registrado en Twilio."
+    if "21608" in e or "unverified" in e:
+        return "Número no verificado en la cuenta trial. Verificalo en la consola de Twilio primero."
+    if "21614" in e or "not a mobile number" in e:
+        return "El número no parece ser un celular válido."
+    return error_str
+
+
 def _guardar_envio(db, batch_id, cliente_id, cliente_nombre, celular,
                    mensaje, twilio_sid, estado, error_msg, es_prueba):
     db.execute(
@@ -594,15 +616,16 @@ def whatsapp_enviar_prueba():
     content_sid = request.form.get("content_sid", "").strip() or None
     mensaje = mensaje_tpl.replace("{nombre}", "Prueba")
     sid, error = _enviar_whatsapp(TWILIO_WA_OWNER, mensaje, content_sid=content_sid)
+    error_legible = _twilio_error_legible(error)
 
     db = get_db()
     _guardar_envio(db, None, None, "PRUEBA", TWILIO_WA_OWNER,
-                   mensaje, sid, "enviado" if sid else "fallido", error, 1)
+                   mensaje, sid, "enviado" if sid else "fallido", error_legible, 1)
     db.commit()
     db.close()
 
-    if error:
-        flash(f"Error al enviar prueba: {error}", "danger")
+    if error_legible:
+        flash(error_legible, "danger")
     else:
         flash(f"Mensaje de prueba enviado a {TWILIO_WA_OWNER}. ✅", "success")
     return redirect(url_for("whatsapp_preview"))
@@ -638,7 +661,7 @@ def whatsapp_enviar_todos():
         sid, error = _enviar_whatsapp(c["celular"], mensaje, content_sid=content_sid)
         estado = "enviado" if sid else "fallido"
         _guardar_envio(db, batch_id, c["id"], c["nombre"], c["celular"],
-                       mensaje, sid, estado, error, 0)
+                       mensaje, sid, estado, _twilio_error_legible(error), 0)
         if sid:
             enviados += 1
         else:
