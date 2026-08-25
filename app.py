@@ -40,6 +40,8 @@ TWILIO_WA_OWNER     = os.environ.get("TWILIO_WA_OWNER", "")     # owner's person
 # SID de la plantilla Twilio para mensajes iniciados (sandbox: "Marketing Promotions")
 TWILIO_CONTENT_SID  = os.environ.get("TWILIO_CONTENT_SID", "HXb5b62575e6e4ff6129ad7c8efe01a50f")
 
+print(f"[Twilio] CONTENT_SID cargado: {TWILIO_CONTENT_SID!r}", flush=True)
+
 UNIDADES = [
     "por kg",
     "por unidad",
@@ -539,12 +541,30 @@ def _get_twilio_client():
     return Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 
-def _enviar_whatsapp(celular, mensaje, content_sid=None, content_variables=None):
+def _es_error_contentsid(err):
+    e = err.lower()
+    return "contentsid" in e or "content_sid" in e or "63016" in e or "mbs" in e
+
+
+def _enviar_via_template(client, to_wa, mensaje, content_sid):
+    try:
+        msg = client.messages.create(
+            from_=TWILIO_WA_FROM,
+            to=to_wa,
+            content_sid=content_sid,
+            content_variables=json.dumps({"1": mensaje}, ensure_ascii=False),
+        )
+        return msg.sid, None
+    except Exception as e:
+        return None, str(e)
+
+
+def _enviar_whatsapp(celular, mensaje, content_sid=None):
     """Envía un mensaje WA. Devuelve (sid, None) o (None, error_str).
 
-    Si se pasa content_sid usa template messaging (requerido por el sandbox de
-    Twilio para mensajes iniciados por el negocio).  content_variables debe ser
-    un dict {"1": valor, "2": valor, …}; si se omite se usa {"1": mensaje}.
+    Intenta primero con body libre. Si Twilio rechaza con error ContentSid,
+    reintenta automáticamente con TWILIO_CONTENT_SID (o el content_sid
+    que se pase explícitamente como override).
     """
     client = _get_twilio_client()
     if not client:
@@ -552,18 +572,23 @@ def _enviar_whatsapp(celular, mensaje, content_sid=None, content_variables=None)
     numero = re.sub(r"[^\d+]", "", celular)
     if not numero.startswith("+"):
         numero = "+" + numero
+    to_wa = f"whatsapp:{numero}"
+
+    # Si se pasa un SID explícito (override manual), usarlo directo.
+    if content_sid:
+        return _enviar_via_template(client, to_wa, mensaje, content_sid)
+
+    # Intento 1: mensaje libre (body)
     try:
-        params = dict(from_=TWILIO_WA_FROM, to=f"whatsapp:{numero}")
-        if content_sid:
-            params["content_sid"] = content_sid
-            vars_dict = content_variables if content_variables else {"1": mensaje}
-            params["content_variables"] = json.dumps(vars_dict, ensure_ascii=False)
-        else:
-            params["body"] = mensaje
-        msg = client.messages.create(**params)
+        msg = client.messages.create(from_=TWILIO_WA_FROM, to=to_wa, body=mensaje)
         return msg.sid, None
     except Exception as e:
-        return None, str(e)
+        err = str(e)
+        # Intento 2: si el error es por ContentSid, reintentar con la plantilla configurada
+        if TWILIO_CONTENT_SID and _es_error_contentsid(err):
+            print(f"[Twilio] body rechazado (ContentSid), reintentando con plantilla …", flush=True)
+            return _enviar_via_template(client, to_wa, mensaje, TWILIO_CONTENT_SID)
+        return None, err
 
 
 def _twilio_error_legible(error_str):

@@ -111,12 +111,10 @@
           <span class="badge bg-secondary ms-1" style="font-size:.65rem;">Opcional / Sandbox</span>
         </summary>
         <div class="mt-2 p-2 bg-light rounded">
-          <div class="alert alert-info py-2 small mb-2">
-            <strong>Mensaje libre funciona si</strong> el destinatario ya envió el código
-            de activación al número del sandbox (escribir <code>join [keyword]</code> al
-            <strong>+17372508034</strong> por WhatsApp).
-            Si ves el error "ContentSid requerido", usá esta sección para seleccionar
-            una plantilla aprobada.
+          <div class="alert alert-secondary py-2 small mb-2">
+            El sistema intenta primero mensaje libre y, si Twilio lo rechaza,
+            usa la plantilla configurada automáticamente. Solo ingresá un SID
+            acá si querés forzar una plantilla específica (override manual).
           </div>
           <div class="d-flex gap-2 mb-2">
             <button type="button" class="btn btn-outline-secondary btn-sm"
@@ -130,7 +128,6 @@
             <input type="text" id="contentSidInput" name="content_sid"
                    class="form-control form-control-sm font-monospace"
                    placeholder="HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                   value="{{ content_sid }}"
                    autocomplete="off">
             <div class="form-text">
               Pegá el SID de la plantilla o seleccioná una arriba.
@@ -232,14 +229,6 @@ function enviarWA(celular) {
   const num = celular.replace(/\D/g, '');
   window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
 }
-
-// Auto-expand template section when there's an error (e.g. ContentSid required)
-document.addEventListener('DOMContentLoaded', function() {
-  if (document.querySelector('.alert-danger')) {
-    const details = document.getElementById('plantillaDetails');
-    if (details) details.open = true;
-  }
-});
 
 async function cargarPlantillas(btn) {
   const container = document.getElementById('plantillasList');
