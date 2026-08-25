@@ -103,6 +103,42 @@
       </div>
     </div>
 
+    <!-- Plantilla Twilio (Content SID) -->
+    <div class="mb-3">
+      <details id="plantillaDetails">
+        <summary class="fw-semibold small text-muted" style="cursor:pointer; user-select:none;">
+          <i class="bi bi-file-earmark-text me-1"></i>Plantilla Twilio (requerida en sandbox)
+          <span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">Sandbox</span>
+        </summary>
+        <div class="mt-2 p-2 bg-light rounded">
+          <p class="small text-muted mb-2">
+            El sandbox de Twilio requiere una plantilla aprobada para mensajes iniciados
+            por el negocio. Tu mensaje completo se envía como la variable
+            <code>{{'{{'}}1{{'}}'}}</code> de la plantilla seleccionada.
+          </p>
+          <div class="d-flex gap-2 mb-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm"
+                    onclick="cargarPlantillas(this)">
+              <i class="bi bi-arrow-clockwise me-1"></i>Cargar plantillas disponibles
+            </button>
+          </div>
+          <div id="plantillasList" class="mb-2"></div>
+          <div>
+            <label class="form-label small fw-semibold mb-1">Content SID</label>
+            <input type="text" id="contentSidInput" name="content_sid"
+                   class="form-control form-control-sm font-monospace"
+                   placeholder="HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                   autocomplete="off">
+            <div class="form-text">
+              Pegá el SID de la plantilla o seleccioná una arriba.
+              Dejalo vacío para envío libre (sólo funciona si el destinatario
+              está dentro de la ventana de 24 hs del sandbox).
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+
     <!-- Botones de envío -->
     <div class="row g-2">
       <div class="col-12 col-md-6">
@@ -192,6 +228,47 @@ function enviarWA(celular) {
   const msg = getMensaje().replace('{nombre}', '');
   const num = celular.replace(/\D/g, '');
   window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
+}
+
+async function cargarPlantillas(btn) {
+  const container = document.getElementById('plantillasList');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cargando…';
+  try {
+    const res = await fetch('/whatsapp/plantillas');
+    const data = await res.json();
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Cargar plantillas disponibles';
+    if (data.error) {
+      container.innerHTML = `<div class="alert alert-danger py-1 small mb-0">${data.error}</div>`;
+      return;
+    }
+    if (!data.plantillas || data.plantillas.length === 0) {
+      container.innerHTML = '<div class="text-muted small">No se encontraron plantillas en esta cuenta.</div>';
+      return;
+    }
+    let html = '<div class="list-group list-group-flush border rounded" style="max-height:180px;overflow-y:auto;">';
+    data.plantillas.forEach(p => {
+      html += `<button type="button" class="list-group-item list-group-item-action py-1 px-2 text-start"
+        style="font-size:.78rem;" onclick="seleccionarPlantilla('${p.sid}', this)">
+        <span class="fw-semibold">${p.nombre || '(sin nombre)'}</span>
+        <code class="ms-1 text-muted" style="font-size:.7rem;">${p.sid}</code>
+        ${p.tipos.length ? '<small class="d-block text-muted">' + p.tipos.join(', ') + '</small>' : ''}
+      </button>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Cargar plantillas disponibles';
+    container.innerHTML = `<div class="alert alert-danger py-1 small mb-0">${e.message}</div>`;
+  }
+}
+
+function seleccionarPlantilla(sid, el) {
+  document.getElementById('contentSidInput').value = sid;
+  el.closest('.list-group').querySelectorAll('.list-group-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
 }
 
 const buscarCliente = document.getElementById('buscarCliente');

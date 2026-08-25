@@ -536,8 +536,13 @@ def _get_twilio_client():
     return Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 
-def _enviar_whatsapp(celular, mensaje):
-    """Envía un mensaje WA. Devuelve (sid, None) o (None, error_str)."""
+def _enviar_whatsapp(celular, mensaje, content_sid=None, content_variables=None):
+    """Envía un mensaje WA. Devuelve (sid, None) o (None, error_str).
+
+    Si se pasa content_sid usa template messaging (requerido por el sandbox de
+    Twilio para mensajes iniciados por el negocio).  content_variables debe ser
+    un dict {"1": valor, "2": valor, …}; si se omite se usa {"1": mensaje}.
+    """
     client = _get_twilio_client()
     if not client:
         return None, "Twilio no está configurado."
@@ -545,11 +550,14 @@ def _enviar_whatsapp(celular, mensaje):
     if not numero.startswith("+"):
         numero = "+" + numero
     try:
-        msg = client.messages.create(
-            from_=TWILIO_WA_FROM,
-            to=f"whatsapp:{numero}",
-            body=mensaje,
-        )
+        params = dict(from_=TWILIO_WA_FROM, to=f"whatsapp:{numero}")
+        if content_sid:
+            params["content_sid"] = content_sid
+            vars_dict = content_variables if content_variables else {"1": mensaje}
+            params["content_variables"] = json.dumps(vars_dict, ensure_ascii=False)
+        else:
+            params["body"] = mensaje
+        msg = client.messages.create(**params)
         return msg.sid, None
     except Exception as e:
         return None, str(e)
@@ -583,8 +591,9 @@ def whatsapp_enviar_prueba():
         flash("No hay número de prueba configurado (TWILIO_WA_OWNER).", "danger")
         return redirect(url_for("whatsapp_preview"))
 
+    content_sid = request.form.get("content_sid", "").strip() or None
     mensaje = mensaje_tpl.replace("{nombre}", "Prueba")
-    sid, error = _enviar_whatsapp(TWILIO_WA_OWNER, mensaje)
+    sid, error = _enviar_whatsapp(TWILIO_WA_OWNER, mensaje, content_sid=content_sid)
 
     db = get_db()
     _guardar_envio(db, None, None, "PRUEBA", TWILIO_WA_OWNER,
@@ -620,12 +629,13 @@ def whatsapp_enviar_todos():
         flash("No hay clientes activos para enviar.", "warning")
         return redirect(url_for("whatsapp_preview"))
 
+    content_sid = request.form.get("content_sid", "").strip() or None
     batch_id = uuid.uuid4().hex
     enviados = fallidos = 0
 
     for c in clientes:
         mensaje = mensaje_tpl.replace("{nombre}", c["nombre"])
-        sid, error = _enviar_whatsapp(c["celular"], mensaje)
+        sid, error = _enviar_whatsapp(c["celular"], mensaje, content_sid=content_sid)
         estado = "enviado" if sid else "fallido"
         _guardar_envio(db, batch_id, c["id"], c["nombre"], c["celular"],
                        mensaje, sid, estado, error, 0)
@@ -643,6 +653,28 @@ def whatsapp_enviar_todos():
     else:
         flash(f"Enviados: {enviados} | Fallidos: {fallidos}", "warning")
     return redirect(url_for("whatsapp_historial"))
+
+
+@app.route("/whatsapp/plantillas")
+@login_required
+def whatsapp_plantillas():
+    """Devuelve JSON con las plantillas de contenido disponibles en la cuenta Twilio."""
+    client = _get_twilio_client()
+    if not client:
+        return {"error": "Twilio no configurado"}, 400
+    try:
+        contents = client.content.v1.contents.list(limit=50)
+        plantillas = []
+        for c in contents:
+            tipos = list(c.types.keys()) if c.types else []
+            plantillas.append({
+                "sid": c.sid,
+                "nombre": c.friendly_name,
+                "tipos": tipos,
+            })
+        return {"plantillas": plantillas}
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 
 @app.route("/whatsapp/historial")
