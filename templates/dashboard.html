@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Inicio – Mis Ventas{% endblock %}
+{% block title %}Inicio – Todo Fresco{% endblock %}
 
 {% block content %}
-<h5 class="fw-bold mb-4">
-  <i class="bi bi-speedometer2 me-2 text-primary"></i>Panel principal
+<h5 class="fw-bold mb-4" style="font-family:'Oswald',sans-serif; font-size:1.3rem;">
+  <i class="bi bi-speedometer2 me-2" style="color:var(--tf-red);"></i>Panel principal
 </h5>
 
 <div class="row g-3 mb-4">
   <div class="col-4">
     <div class="card stat-card text-center py-3">
-      <div class="fs-2 fw-bold text-primary">{{ total_productos }}</div>
+      <div class="fs-2 fw-bold" style="color:var(--tf-red);">{{ total_productos }}</div>
       <div class="small text-muted">Productos</div>
     </div>
   </div>
   <div class="col-4">
     <div class="card stat-card text-center py-3">
-      <div class="fs-2 fw-bold text-warning">{{ en_oferta }}</div>
+      <div class="fs-2 fw-bold" style="color:var(--tf-gold);">{{ en_oferta }}</div>
       <div class="small text-muted">En oferta</div>
     </div>
   </div>
@@ -29,7 +29,7 @@
 
 <div class="row g-3">
   <div class="col-6">
-    <a href="{{ url_for('productos') }}" class="btn btn-outline-primary w-100 py-3">
+    <a href="{{ url_for('productos') }}" class="btn btn-primary w-100 py-3">
       <i class="bi bi-box-seam d-block fs-3 mb-1"></i>
       <span class="small fw-semibold">Productos</span>
     </a>
@@ -48,9 +48,14 @@
   </div>
   <div class="col-6">
     <a href="{{ url_for('whatsapp_preview') }}" class="btn w-100 py-3"
-       style="background:#25D366; color:#fff; border:none;">
+       style="background:var(--tf-wa); color:#fff; border:none;">
       <i class="bi bi-whatsapp d-block fs-3 mb-1"></i>
       <span class="small fw-semibold">Vista WhatsApp</span>
+    </a>
+  </div>
+  <div class="col-12">
+    <a href="{{ url_for('tienda') }}" class="btn btn-outline-secondary w-100 py-2" target="_blank">
+      <i class="bi bi-shop me-2"></i>Ver tienda pública
     </a>
   </div>
 </div>

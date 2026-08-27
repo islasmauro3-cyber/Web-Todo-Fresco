@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Productos – Mis Ventas{% endblock %}
+{% block title %}Productos – Todo Fresco{% endblock %}
 
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-3">
-  <h5 class="fw-bold mb-0">
-    <i class="bi bi-box-seam me-2 text-primary"></i>Productos
+  <h5 class="fw-bold mb-0" style="font-family:'Oswald',sans-serif;">
+    <i class="bi bi-box-seam me-2" style="color:var(--tf-red);"></i>Productos
   </h5>
   <div class="d-flex gap-2">
-    <a href="{{ url_for('productos_importar') }}" class="btn btn-outline-primary btn-sm">
+    <a href="{{ url_for('productos_importar') }}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-upload me-1"></i>Importar
     </a>
     <a href="{{ url_for('producto_nuevo') }}" class="btn btn-primary btn-sm">
@@ -23,18 +23,28 @@
 </div>
 {% else %}
 
-<!-- Filtro rápido en mobile -->
+<!-- Filtro por estado -->
 <div class="btn-group btn-group-sm w-100 mb-3" id="filtroBtn" role="group">
   <button type="button" class="btn btn-outline-secondary active" data-filter="todos">Todos</button>
   <button type="button" class="btn btn-outline-secondary" data-filter="activos">Activos</button>
   <button type="button" class="btn btn-outline-secondary" data-filter="oferta">En oferta</button>
 </div>
 
+<!-- Filtro por categoría -->
+<div class="cat-chips-row mb-3">
+  <button class="cat-chip active" data-cat="todas">Todas</button>
+  <button class="cat-chip" data-cat="Fiambres y Quesos">🧀 Fiambres y Quesos</button>
+  <button class="cat-chip" data-cat="Nuestras Pastas">🍝 Pastas</button>
+  <button class="cat-chip" data-cat="Todo para tu Fiesta">🎉 Fiesta</button>
+  <button class="cat-chip" data-cat="Línea Cachafaz">✨ Cachafaz</button>
+</div>
+
 <div class="row g-3" id="gridProductos">
   {% for p in productos %}
   <div class="col-6 col-md-4 producto-item
     {% if not p.activo %}inactivo{% endif %}
-    {% if p.oferta_hoy %}oferta{% endif %}">
+    {% if p.oferta_hoy %}oferta{% endif %}"
+    data-cat="{{ p.categoria or 'Fiambres y Quesos' }}">
     <div class="card product-card h-100 {% if not p.activo %}opacity-50{% endif %}">
       <div class="position-relative">
         {% if p.foto %}
@@ -46,7 +56,7 @@
         </div>
         {% endif %}
         {% if p.oferta_hoy %}
-        <span class="badge bg-danger badge-oferta">
+        <span class="badge badge-oferta">
           <i class="bi bi-tag-fill me-1"></i>OFERTA
         </span>
         {% endif %}
@@ -56,24 +66,31 @@
         {% if p.descripcion %}
         <p class="text-muted mb-1" style="font-size:.75rem;">{{ p.descripcion }}</p>
         {% endif %}
+        <p class="mb-1" style="font-size:.7rem; color:#999;">
+          <i class="bi bi-tag me-1"></i>{{ p.categoria or 'Fiambres y Quesos' }}
+        </p>
         <div class="mb-2">
           {% for v in p.variantes %}
           <div class="lh-sm" style="font-size:.82rem;">
-            <span class="fw-bold {% if v.en_oferta %}text-danger{% else %}text-primary{% endif %}">
-              ${{ "%.2f"|format(v.precio) }}
+            <span class="fw-bold {% if v.en_oferta %}precio-gold{% else %}text-primary{% endif %}">
+              ${{ "%.0f"|format(v.precio) }}
             </span>
             <span class="text-muted">/ {{ v.unidad|unidad_corta }}</span>
-            {% if v.en_oferta %}<i class="bi bi-tag-fill text-danger" style="font-size:.65rem;"></i>{% endif %}
+            {% if v.en_oferta %}<i class="bi bi-tag-fill" style="font-size:.6rem; color:var(--tf-red);"></i>{% endif %}
           </div>
           {% else %}
-          <p class="fw-bold text-primary mb-0" style="font-size:.85rem;">
-            ${{ "%.2f"|format(p.precio) }}
+          <p class="fw-bold mb-0 precio-gold" style="font-size:.85rem;">
+            ${{ "%.0f"|format(p.precio) }}
             <span class="text-muted fw-normal" style="font-size:.8rem;">/ {{ p.unidad|unidad_corta }}</span>
           </p>
           {% endfor %}
         </div>
 
         <div class="d-flex gap-1 flex-wrap">
+          <a href="{{ url_for('producto_oferta', pid=p.id) }}"
+             class="btn btn-outline-secondary btn-sm" target="_blank" title="Ver ficha pública">
+            <i class="bi bi-eye"></i>
+          </a>
           <a href="{{ url_for('producto_editar', pid=p.id) }}"
              class="btn btn-outline-secondary btn-sm flex-fill">
             <i class="bi bi-pencil"></i>
@@ -102,17 +119,34 @@
 
 {% block scripts %}
 <script>
+// Filtro estado
 document.querySelectorAll('#filtroBtn button').forEach(btn => {
   btn.addEventListener('click', function() {
     document.querySelectorAll('#filtroBtn button').forEach(b => b.classList.remove('active'));
     this.classList.add('active');
-    const f = this.dataset.filter;
-    document.querySelectorAll('.producto-item').forEach(el => {
-      if (f === 'todos') { el.style.display = ''; }
-      else if (f === 'activos') { el.style.display = el.classList.contains('inactivo') ? 'none' : ''; }
-      else if (f === 'oferta') { el.style.display = el.classList.contains('oferta') ? '' : 'none'; }
-    });
+    applyFilters();
   });
 });
+
+// Filtro categoría
+document.querySelectorAll('.cat-chip[data-cat]').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.cat-chip[data-cat]').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    applyFilters();
+  });
+});
+
+function applyFilters() {
+  const estado = document.querySelector('#filtroBtn .active')?.dataset.filter || 'todos';
+  const cat = document.querySelector('.cat-chip.active[data-cat]')?.dataset.cat || 'todas';
+  document.querySelectorAll('.producto-item').forEach(el => {
+    let show = true;
+    if (estado === 'activos' && el.classList.contains('inactivo')) show = false;
+    if (estado === 'oferta' && !el.classList.contains('oferta')) show = false;
+    if (cat !== 'todas' && el.dataset.cat !== cat) show = false;
+    el.style.display = show ? '' : 'none';
+  });
+}
 </script>
 {% endblock %}

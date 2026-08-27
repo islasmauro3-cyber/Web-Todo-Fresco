@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ producto.nombre }} – Todo Fresco</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    body { max-width: 480px; margin: 0 auto; }
+  </style>
+</head>
+<body class="tf-public">
+
+<!-- HEADER STICKY -->
+<header class="tf-pub-header">
+  <div class="tf-brand">
+    <img src="{{ url_for('static', filename='images/IMG_8495.png') }}"
+         class="tf-logo-pub" alt="Todo Fresco"
+         onerror="this.style.display='none'">
+    <div>
+      <div class="tf-brand-text">TODO FRESCO</div>
+      <span class="tf-brand-sub">Desde 2012</span>
+    </div>
+  </div>
+</header>
+
+<!-- Link a tienda completa -->
+<div class="px-4 pt-3 pb-1">
+  <a href="{{ url_for('tienda') }}" class="btn-tf-outline" style="font-size:.82rem; padding:6px 14px;">
+    <i class="bi bi-shop me-1"></i>Ver toda la tienda
+  </a>
+</div>
+
+<!-- FOTO PRODUCTO -->
+<div class="tf-ficha-img-wrap mt-2">
+  {% if producto.foto %}
+  <img src="{{ url_for('uploaded_file', filename=producto.foto) }}"
+       class="tf-ficha-img" alt="{{ producto.nombre }}">
+  {% else %}
+  <div class="tf-prod-placeholder" style="aspect-ratio:4/3; max-height:280px;">
+    <i class="bi bi-image" style="font-size:3rem;"></i>
+  </div>
+  {% endif %}
+
+  {% if producto.oferta_hoy %}
+  <div class="tf-ficha-badge-oferta">OFERTA</div>
+  {% endif %}
+
+  {% if producto.oferta_hasta %}
+  <div class="tf-tag-fecha">Válido hasta {{ producto.oferta_hasta }}</div>
+  {% endif %}
+</div>
+
+<!-- INFO PRODUCTO -->
+<div class="px-4 pt-3 pb-2">
+  <div class="tf-ficha-nombre">{{ producto.nombre }}</div>
+  {% if producto.descripcion %}
+  <p class="text-muted mt-1 mb-2" style="font-size:.9rem;">{{ producto.descripcion }}</p>
+  {% endif %}
+
+  <!-- PRECIOS -->
+  {% set v_oferta = variantes | selectattr('en_oferta', 'equalto', 1) | list %}
+  {% set v_normal = variantes | selectattr('en_oferta', 'equalto', 0) | list %}
+
+  {% if v_oferta and v_normal %}
+    <!-- Tiene precio original y precio oferta -->
+    <div class="d-flex align-items-baseline gap-2 flex-wrap mt-2">
+      <span class="tf-ficha-precio-tachado">${{ "%.0f"|format(v_normal[0].precio) }}</span>
+      <span class="tf-ficha-precio-oferta">${{ "%.0f"|format(v_oferta[0].precio) }}</span>
+      {% set pct = ((v_normal[0].precio - v_oferta[0].precio) / v_normal[0].precio * 100) | int %}
+      {% if pct > 0 %}<span class="tf-ficha-pct">-{{ pct }}% OFF</span>{% endif %}
+    </div>
+    <div class="tf-unidad-tag mt-1">{{ v_oferta[0].unidad }}</div>
+    {% if variantes | length > 1 %}
+    <div class="mt-2">
+      {% for v in variantes %}
+      <div style="font-size:.82rem;" class="text-muted">
+        <span class="{% if v.en_oferta %}precio-gold fw-bold{% endif %}">
+          ${{ "%.0f"|format(v.precio) }}</span> / {{ v.unidad|unidad_corta }}
+        {% if v.en_oferta %}<i class="bi bi-tag-fill" style="font-size:.6rem; color:var(--tf-red);"></i>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  {% elif v_oferta %}
+    <!-- Solo precio de oferta -->
+    <div class="mt-2">
+      <span class="tf-ficha-precio-oferta">${{ "%.0f"|format(v_oferta[0].precio) }}</span>
+      <div class="tf-unidad-tag mt-1">Precio especial · {{ v_oferta[0].unidad }}</div>
+    </div>
+
+  {% elif variantes %}
+    <!-- Sin oferta, precio normal -->
+    <div class="mt-2">
+      <span class="tf-ficha-precio-normal">${{ "%.0f"|format(variantes[0].precio) }}</span>
+      <div class="tf-unidad-tag mt-1">{{ variantes[0].unidad }}</div>
+    </div>
+    {% if variantes | length > 1 %}
+    <div class="mt-2">
+      {% for v in variantes %}
+      <div style="font-size:.82rem;" class="text-muted">
+        ${{ "%.0f"|format(v.precio) }} / {{ v.unidad|unidad_corta }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endif %}
+
+  <!-- BOTÓN WHATSAPP -->
+  {% set msg_wa %}Hola, quiero pedir: {{ producto.nombre }}{% if variantes %} - ${{ "%.0f"|format((v_oferta[0].precio if v_oferta else variantes[0].precio) | float) }}{% endif %}{% endset %}
+  <div class="mt-4">
+    <a href="https://wa.me/{{ wa_negocio }}?text={{ msg_wa | urlencode }}"
+       class="btn-wa" target="_blank" rel="noopener">
+      <i class="bi bi-whatsapp" style="font-size:1.3rem;"></i>
+      PEDIR POR WHATSAPP
+    </a>
+    <p class="btn-wa-trust">Te contestamos en minutos · 9 a 21 h</p>
+  </div>
+</div>
+
+<!-- SEPARADOR -->
+<hr class="mx-4" style="border-color:#d9c9ae;">
+
+<!-- TAMBIÉN TE PUEDE INTERESAR -->
+{% if otros %}
+<div class="px-4 pb-2">
+  <div class="tf-section-title mb-3">
+    <i class="bi bi-heart me-1" style="color:var(--tf-gold);"></i>También te puede interesar
+  </div>
+  <div class="row g-2">
+    {% for op in otros %}
+    <div class="col-6">
+      <a href="{{ url_for('producto_oferta', pid=op.id) }}" class="tf-prod-card">
+        <div class="prod-img-wrap">
+          {% if op.foto %}
+          <img src="{{ url_for('uploaded_file', filename=op.foto) }}" alt="{{ op.nombre }}" loading="lazy">
+          {% else %}
+          <div class="tf-prod-placeholder"><i class="bi bi-image"></i></div>
+          {% endif %}
+          {% if op.oferta_hoy %}
+          <span class="badge badge-oferta" style="font-size:.65rem;">OFERTA</span>
+          {% endif %}
+        </div>
+        <div class="prod-info">
+          <div class="prod-nombre">{{ op.nombre }}</div>
+          {% if op.variantes %}
+          {% set vop = op.variantes | selectattr('en_oferta', 'equalto', 1) | list %}
+          <div class="prod-precio">
+            ${{ "%.0f"|format((vop[0].precio if vop else op.variantes[0].precio) | float) }}
+            <span class="prod-unidad">/ {{ (vop[0].unidad if vop else op.variantes[0].unidad)|unidad_corta }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<hr class="mx-4" style="border-color:#d9c9ae;">
+{% endif %}
+
+<!-- CHIPS CATEGORÍAS -->
+<div class="px-4 pb-2">
+  <div class="tf-section-title mb-2" style="font-size:.9rem;">Explorar categorías</div>
+  <div class="cat-chips-row">
+    <a href="{{ url_for('tienda') }}" class="cat-chip">🏪 Todo</a>
+    {% for cat in categorias %}
+    <a href="{{ url_for('tienda') }}?cat={{ cat | urlencode }}" class="cat-chip">{{ cat }}</a>
+    {% endfor %}
+    <a href="{{ url_for('tienda') }}?cat=ofertas" class="cat-chip">🔥 Ofertas del día</a>
+  </div>
+</div>
+
+<!-- BOTÓN VER CATÁLOGO -->
+<div class="px-4 pb-4 mt-3">
+  <a href="{{ url_for('tienda') }}" class="btn-tf-outline block">
+    VER CATÁLOGO COMPLETO →
+  </a>
+</div>
+
+<!-- FOOTER -->
+<footer class="tf-footer">
+  <div class="fw-bold mb-1" style="font-family:'Anton',sans-serif; font-size:1.1rem;">TODO FRESCO</div>
+  <div>Av. Bernardo Caveri 1330, Moreno</div>
+  <div>Lunes a sábado 9 a 21 h · Domingos 9 a 13 h</div>
+  <div class="mt-1" style="color:rgba(255,255,255,.5);">Desde 2012</div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -51,6 +51,17 @@ UNIDADES = [
     "por horma entera",
 ]
 
+CATEGORIAS = [
+    "Fiambres y Quesos",
+    "Nuestras Pastas",
+    "Todo para tu Fiesta",
+    "Línea Cachafaz",
+]
+
+# Número de WhatsApp del negocio para los botones públicos (solo dígitos)
+_wa_raw = TWILIO_WA_OWNER or ""
+WA_NEGOCIO = re.sub(r"[^\d]", "", _wa_raw)
+
 _UNIDAD_MAP = {
     "kg": "por kg", "kilo": "por kg", "kilos": "por kg", "kilogramo": "por kg",
     "por kg": "por kg",
@@ -259,7 +270,7 @@ def productos():
 def producto_nuevo():
     if request.method == "POST":
         return _guardar_producto(None)
-    return render_template("producto_form.html", producto=None, unidades=UNIDADES, variantes_form=[])
+    return render_template("producto_form.html", producto=None, unidades=UNIDADES, variantes_form=[], categorias=CATEGORIAS)
 
 
 @app.route("/productos/<int:pid>/editar", methods=["GET", "POST"])
@@ -274,7 +285,8 @@ def producto_editar(pid):
     if request.method == "POST":
         return _guardar_producto(dict(row))
     return render_template(
-        "producto_form.html", producto=dict(row), unidades=UNIDADES, variantes_form=variantes
+        "producto_form.html", producto=dict(row), unidades=UNIDADES,
+        variantes_form=variantes, categorias=CATEGORIAS,
     )
 
 
@@ -285,6 +297,9 @@ def _guardar_producto(existente):
     oferta_desde = request.form.get("oferta_desde") or None
     oferta_hasta = request.form.get("oferta_hasta") or None
     activo = 1 if request.form.get("activo") else 0
+    categoria = request.form.get("categoria", "Fiambres y Quesos")
+    if categoria not in CATEGORIAS:
+        categoria = CATEGORIAS[0]
 
     variantes = _parse_variantes_form()
 
@@ -294,6 +309,7 @@ def _guardar_producto(existente):
         return render_template(
             "producto_form.html", producto=existente,
             unidades=UNIDADES, variantes_form=variantes,
+            categorias=CATEGORIAS,
         )
 
     if not nombre:
@@ -319,19 +335,19 @@ def _guardar_producto(existente):
     if pid:
         db.execute(
             """UPDATE productos SET nombre=?, descripcion=?, precio=?, foto=?,
-               unidad=?, en_oferta=?, oferta_desde=?, oferta_hasta=?, activo=?
+               unidad=?, en_oferta=?, oferta_desde=?, oferta_hasta=?, activo=?, categoria=?
                WHERE id=?""",
             (nombre, descripcion, precio, foto, unidad,
-             en_oferta, oferta_desde, oferta_hasta, activo, pid),
+             en_oferta, oferta_desde, oferta_hasta, activo, categoria, pid),
         )
         flash("Producto actualizado.", "success")
     else:
         cur = db.execute(
             """INSERT INTO productos (nombre, descripcion, precio, foto, unidad,
-               en_oferta, oferta_desde, oferta_hasta, activo)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               en_oferta, oferta_desde, oferta_hasta, activo, categoria)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (nombre, descripcion, precio, foto, unidad,
-             en_oferta, oferta_desde, oferta_hasta, activo),
+             en_oferta, oferta_desde, oferta_hasta, activo, categoria),
         )
         pid = cur.lastrowid
         flash("Producto creado.", "success")
@@ -737,6 +753,59 @@ def whatsapp_historial():
     ).fetchall()]
     db.close()
     return render_template("whatsapp_historial.html", envios=envios)
+
+
+# ── Páginas públicas (sin login) ─────────────────────────────────────────────
+
+@app.route("/tienda")
+def tienda():
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM productos WHERE activo=1 ORDER BY categoria, nombre"
+    ).fetchall()
+    ids = [r["id"] for r in rows]
+    variantes_by_prod = _get_variantes_bulk(ids, db) if ids else {}
+    db.close()
+    items = []
+    for r in rows:
+        p = dict(r)
+        p["variantes"] = variantes_by_prod.get(p["id"], [])
+        p["oferta_hoy"] = oferta_activa(p, p["variantes"])
+        items.append(p)
+    return render_template("tienda.html", productos=items, categorias=CATEGORIAS, wa_negocio=WA_NEGOCIO)
+
+
+@app.route("/oferta/<int:pid>")
+def producto_oferta(pid):
+    db = get_db()
+    row = db.execute("SELECT * FROM productos WHERE id=? AND activo=1", (pid,)).fetchone()
+    if not row:
+        db.close()
+        abort(404)
+    p = dict(row)
+    variantes = _get_variantes(pid, db)
+    p["variantes"] = variantes
+    p["oferta_hoy"] = oferta_activa(p, variantes)
+
+    otros_rows = db.execute(
+        "SELECT * FROM productos WHERE id != ? AND activo=1 ORDER BY RANDOM() LIMIT 6", (pid,)
+    ).fetchall()
+    otros_ids = [r["id"] for r in otros_rows]
+    otros_variantes = _get_variantes_bulk(otros_ids, db) if otros_ids else {}
+    db.close()
+
+    otros = []
+    for r in otros_rows:
+        op = dict(r)
+        op["variantes"] = otros_variantes.get(op["id"], [])
+        op["oferta_hoy"] = oferta_activa(op, op["variantes"])
+        otros.append(op)
+
+    return render_template(
+        "producto_oferta.html",
+        producto=p, variantes=variantes, otros=otros,
+        categorias=CATEGORIAS, wa_negocio=WA_NEGOCIO,
+    )
 
 
 # ── Importación masiva ────────────────────────────────────────────────────────

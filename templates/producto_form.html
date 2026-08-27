@@ -53,6 +53,17 @@
               placeholder="Ej: Docena, rellenas con cebolla y huevo">{{ producto.descripcion if producto else '' }}</textarea>
   </div>
 
+  <div class="mb-3">
+    <label class="form-label fw-semibold">Categoría</label>
+    <select name="categoria" class="form-select">
+      {% for c in categorias %}
+      <option value="{{ c }}"
+        {% if producto and producto.categoria == c %}selected
+        {% elif not producto and loop.first %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
   <hr>
 
   <!-- Precios y presentaciones -->
