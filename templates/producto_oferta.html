@@ -169,12 +169,23 @@
 <!-- CHIPS CATEGORÍAS -->
 <div class="px-4 pb-2">
   <div class="tf-section-title mb-2" style="font-size:.9rem;">Explorar categorías</div>
+  {% set cat_icons = {'Fiambres y Quesos': '🧀', 'Nuestras Pastas': '🍝', 'Todo para tu Fiesta': '🎉', 'Línea Cachafaz': '✨'} %}
+  {% set cat_labels = {'Fiambres y Quesos': 'Fiambres', 'Nuestras Pastas': 'Pastas', 'Todo para tu Fiesta': 'Fiesta', 'Línea Cachafaz': 'Cachafaz'} %}
   <div class="cat-chips-row">
-    <a href="{{ url_for('tienda') }}" class="cat-chip">🏪 Todo</a>
+    <a href="{{ url_for('tienda') }}" class="cat-chip">
+      <span class="cat-icon">🏪</span>
+      <span class="cat-label">Todo</span>
+    </a>
     {% for cat in categorias %}
-    <a href="{{ url_for('tienda') }}?cat={{ cat | urlencode }}" class="cat-chip">{{ cat }}</a>
+    <a href="{{ url_for('tienda') }}?cat={{ cat | urlencode }}" class="cat-chip">
+      <span class="cat-icon">{{ cat_icons.get(cat, '📦') }}</span>
+      <span class="cat-label">{{ cat_labels.get(cat, cat) }}</span>
+    </a>
     {% endfor %}
-    <a href="{{ url_for('tienda') }}?cat=ofertas" class="cat-chip">🔥 Ofertas del día</a>
+    <a href="{{ url_for('tienda') }}?cat=ofertas" class="cat-chip">
+      <span class="cat-icon">🔥</span>
+      <span class="cat-label">Ofertas</span>
+    </a>
   </div>
 </div>
 

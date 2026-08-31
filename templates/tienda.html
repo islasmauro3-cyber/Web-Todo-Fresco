@@ -38,12 +38,23 @@
 
 <!-- CATEGORÍAS -->
 <div class="px-3 pb-2">
+  {% set cat_icons = {'Fiambres y Quesos': '🧀', 'Nuestras Pastas': '🍝', 'Todo para tu Fiesta': '🎉', 'Línea Cachafaz': '✨'} %}
+  {% set cat_labels = {'Fiambres y Quesos': 'Fiambres', 'Nuestras Pastas': 'Pastas', 'Todo para tu Fiesta': 'Fiesta', 'Línea Cachafaz': 'Cachafaz'} %}
   <div class="cat-chips-row">
-    <button class="cat-chip active" data-cat="todas">🏪 Todas</button>
+    <button class="cat-chip active" data-cat="todas">
+      <span class="cat-icon">🏪</span>
+      <span class="cat-label">Todas</span>
+    </button>
     {% for cat in categorias %}
-    <button class="cat-chip" data-cat="{{ cat }}">{{ cat }}</button>
+    <button class="cat-chip" data-cat="{{ cat }}">
+      <span class="cat-icon">{{ cat_icons.get(cat, '📦') }}</span>
+      <span class="cat-label">{{ cat_labels.get(cat, cat) }}</span>
+    </button>
     {% endfor %}
-    <button class="cat-chip" data-cat="ofertas">🔥 Ofertas del día</button>
+    <button class="cat-chip" data-cat="ofertas">
+      <span class="cat-icon">🔥</span>
+      <span class="cat-label">Ofertas</span>
+    </button>
   </div>
 </div>
 
