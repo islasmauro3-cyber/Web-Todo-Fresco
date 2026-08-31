@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 .env
 ventas.db
+todo_fresco.db
 static/uploads/*
 !static/uploads/.gitkeep
 venv/
