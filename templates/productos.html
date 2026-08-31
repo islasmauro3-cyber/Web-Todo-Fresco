@@ -86,18 +86,21 @@
         </p>
         <div class="mb-2">
           {% for v in p.variantes %}
-          <div class="lh-sm" style="font-size:.82rem;">
-            <span class="fw-bold {% if v.en_oferta %}precio-gold{% else %}text-primary{% endif %}">
+          <div class="lh-sm">
+            <span class="{% if v.en_oferta %}precio-gold precio-oferta-card{% else %}precio-normal-card{% endif %}">
               ${{ "%.0f"|format(v.precio) }}
             </span>
-            <span class="text-muted">/ {{ v.unidad|unidad_corta }}</span>
-            {% if v.en_oferta %}<i class="bi bi-tag-fill" style="font-size:.6rem; color:var(--tf-red);"></i>{% endif %}
+            {% if not v.en_oferta %}
+            <span class="text-muted" style="font-size:.7rem;">/ {{ v.unidad|unidad_corta }}</span>
+            {% else %}
+            <div class="prod-unit-line">/ {{ v.unidad|unidad_corta }}</div>
+            {% endif %}
           </div>
           {% else %}
-          <p class="fw-bold mb-0 precio-gold" style="font-size:.85rem;">
+          <div class="precio-gold precio-oferta-card">
             ${{ "%.0f"|format(p.precio) }}
-            <span class="text-muted fw-normal" style="font-size:.8rem;">/ {{ p.unidad|unidad_corta }}</span>
-          </p>
+          </div>
+          <div class="prod-unit-line">/ {{ p.unidad|unidad_corta }}</div>
           {% endfor %}
         </div>
 
