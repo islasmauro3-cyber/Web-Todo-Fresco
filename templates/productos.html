@@ -81,19 +81,22 @@
         {% if p.descripcion %}
         <p class="text-muted mb-1" style="font-size:.75rem;">{{ p.descripcion }}</p>
         {% endif %}
-        <p class="mb-1" style="font-size:.7rem; color:#999;">
+        <p class="mb-1 prod-cat-label">
           <i class="bi bi-tag me-1"></i>{{ p.categoria or 'Fiambres y Quesos' }}
         </p>
         <div class="mb-2">
+          {% set tiene_oferta = p.variantes | selectattr('en_oferta', 'equalto', 1) | list | length > 0 %}
           {% for v in p.variantes %}
           <div class="lh-sm">
-            <span class="{% if v.en_oferta %}precio-gold precio-oferta-card{% else %}precio-normal-card{% endif %}">
+            <span class="{% if v.en_oferta %}precio-gold precio-oferta-card{% elif tiene_oferta %}precio-normal-card{% else %}precio-solo{% endif %}">
               ${{ "%.0f"|format(v.precio) }}
             </span>
-            {% if not v.en_oferta %}
-            <span class="text-muted" style="font-size:.7rem;">/ {{ v.unidad|unidad_corta }}</span>
-            {% else %}
+            {% if not v.en_oferta and not tiene_oferta %}
             <div class="prod-unit-line">/ {{ v.unidad|unidad_corta }}</div>
+            {% elif v.en_oferta %}
+            <div class="prod-unit-line">/ {{ v.unidad|unidad_corta }}</div>
+            {% else %}
+            <span class="text-muted" style="font-size:.68rem;">/ {{ v.unidad|unidad_corta }}</span>
             {% endif %}
           </div>
           {% else %}
