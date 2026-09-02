@@ -429,3 +429,342 @@ body.tf-public { background: var(--tf-cream); }
 .tf-prod-placeholder {
   border-radius: 8px 8px 0 0;
 }
+/* ══════════════════════════════════════════════
+   TODO FRESCO — CARDS DE PRODUCTO v4
+   Pegar al FINAL de static/css/style.css.
+   Reemplaza visualmente los bloques "Product cards (admin)",
+   "DESIGN POLISH v2" y "v3" sin tocar el HTML de productos.html.
+   ══════════════════════════════════════════════ */
+
+:root {
+  --tf-card-line:   #F0E4CC;   /* borde crema de la card */
+  --tf-card-rule:   #F1E8D8;   /* divisor interno */
+  --tf-btn-line:    #DED4C1;   /* borde botón secundario */
+  --tf-btn-bg:      #FFFDF7;   /* fondo botón secundario */
+  --tf-btn-bg-h:    #F7EFDD;
+  --tf-red-line:    #DFB0B2;   /* borde botón rojo */
+  --tf-txt-muted:   #8B7D76;   /* descripción */
+  --tf-txt-unit:    #8C827D;   /* línea de unidad */
+  --tf-txt-strike:  #B0A69F;   /* precio tachado */
+  --tf-stripe-a:    #F3E6C9;
+  --tf-stripe-b:    #EADCBC;
+}
+
+/* ── 1. La card: papel/cartulina ── */
+.product-card {
+  background: var(--tf-white);
+  border: 1px solid var(--tf-card-line);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(46,27,18,.05), 0 6px 16px rgba(46,27,18,.06);
+  overflow: hidden;
+  position: relative;   /* ancla la pill de categoría sobre la foto */
+  transition: box-shadow .22s, transform .22s;
+}
+.product-card:hover {
+  box-shadow: 0 2px 4px rgba(46,27,18,.06), 0 12px 28px rgba(46,27,18,.11);
+  transform: translateY(-2px);
+}
+
+/* ── 2. Foto: a sangre, 4:3, sin margen interno ── */
+.product-card > .position-relative {
+  margin: 0;
+  border-radius: 9px 9px 0 0;
+  overflow: hidden;
+  background: var(--tf-stripe-a);
+}
+.product-img,
+.product-img-placeholder {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+}
+.product-img-placeholder {
+  background: repeating-linear-gradient(135deg,
+    var(--tf-stripe-a) 0 14px, var(--tf-stripe-b) 14px 28px);
+  color: #C3B48D;
+  font-size: 1.9rem;
+}
+
+/* ── 3. Badge OFERTA ── */
+.badge-oferta {
+  top: 10px; left: 10px;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  box-shadow: 0 2px 6px rgba(46,27,18,.25);
+}
+
+/* ── 4. Cuerpo: espaciado generoso ── */
+.product-card .card-body {
+  padding: 16px 16px 18px !important;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 5. Nombre: Oswald bold condensado, en mayúsculas ── */
+.product-card .card-body .fw-semibold {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700 !important;
+  font-size: 16px !important;
+  line-height: 1.15;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  color: var(--tf-brown);
+  text-wrap: pretty;
+}
+
+/* ── 6. Descripción ── */
+.product-card .card-body > p.text-muted {
+  font-size: 11.5px !important;
+  line-height: 1.45;
+  color: var(--tf-txt-muted) !important;
+  margin: 6px 0 0 !important;
+  text-wrap: pretty;
+}
+
+/* ── 7. Categoría: pill blanca sobre la foto (no línea de texto) ── */
+.prod-cat-label {
+  position: absolute;
+  top: 10px; right: 10px;
+  z-index: 2;
+  margin: 0 !important;
+  background: #fff;
+  color: var(--tf-brown);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--tf-card-line);
+  box-shadow: 0 1px 4px rgba(46,27,18,.10);
+  white-space: nowrap;
+}
+.prod-cat-label .bi { display: none; }
+
+/* ── 8. Precio: el elemento dominante de la card ── */
+.product-card .card-body > .mb-2 { margin: 18px 0 0 !important; }
+
+.precio-oferta-card,
+.precio-solo {
+  font-family: 'Oswald', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 33px !important;
+  line-height: 1 !important;
+  display: inline-block !important;
+  letter-spacing: -.2px;
+}
+.precio-oferta-card { color: var(--tf-gold) !important; }
+.precio-solo        { color: var(--tf-gold) !important; }
+
+/* precio anterior tachado, al lado del grande */
+.precio-normal-card {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13.5px !important;
+  font-weight: 400 !important;
+  color: var(--tf-txt-strike) !important;
+  text-decoration: line-through !important;
+  display: inline !important;
+  margin-left: 9px;
+}
+
+/* línea de unidad */
+.prod-unit-line {
+  font-size: 11.5px;
+  color: var(--tf-txt-unit);
+  margin-top: 9px;
+  line-height: 1.3;
+}
+
+/* ── 9. Divisor + acciones en dos filas ──
+   Fila 1: Editar + oferta (con etiqueta, como en la referencia)
+   Fila 2: ver ficha + borrar (íconos, alineados a la derecha) */
+.product-card .card-body > .d-flex.gap-1 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px !important;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--tf-card-rule);
+}
+/* editar (2º hijo) y formulario de oferta → fila 1 */
+.product-card .card-body > .d-flex.gap-1 > .btn.flex-fill,
+.product-card .card-body > .d-flex.gap-1 > form:first-of-type {
+  order: 1;
+  flex: 1 1 40%;
+  min-width: 0;
+}
+.product-card .card-body > .d-flex.gap-1 > form:first-of-type { flex: 1.4 1 45%; }
+/* ver ficha (1er hijo, sin flex-fill) y borrar (último form) → fila 2 */
+.product-card .card-body > .d-flex.gap-1 > .btn:not(.flex-fill) {
+  order: 2;
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 30px;
+}
+.product-card .card-body > .d-flex.gap-1 > form:last-of-type {
+  order: 2;
+  flex: 0 0 auto;
+  width: 30px;
+}
+.product-card .card-body > .d-flex.gap-1 > .btn:not(.flex-fill),
+.product-card .card-body > .d-flex.gap-1 > form:last-of-type .btn {
+  height: 30px !important;
+  padding: 0 !important;
+  font-size: 12px !important;
+}
+.product-card .card-body > .d-flex.gap-1 .btn {
+  height: 34px;
+  padding: 0 12px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12.5px !important;
+  font-weight: 500;
+  border-radius: 6px !important;
+  border-width: 1px;
+  white-space: nowrap;
+}
+/* secundarios (ver ficha / editar): crema */
+.product-card .card-body .btn-outline-secondary {
+  background: var(--tf-btn-bg) !important;
+  border-color: var(--tf-btn-line) !important;
+  color: var(--tf-brown) !important;
+}
+.product-card .card-body .btn-outline-secondary:hover {
+  background: var(--tf-btn-bg-h) !important;
+  border-color: var(--tf-btn-line) !important;
+  color: var(--tf-brown) !important;
+}
+/* poner en oferta: contorno rojo */
+.product-card .card-body .btn-outline-warning {
+  background: #fff !important;
+  border-color: var(--tf-red-line) !important;
+  color: var(--tf-red) !important;
+}
+.product-card .card-body .btn-outline-warning:hover {
+  background: var(--tf-red) !important;
+  border-color: var(--tf-red) !important;
+  color: #fff !important;
+}
+/* quitar oferta: dorado sólido */
+.product-card .card-body .btn-warning {
+  background: var(--tf-gold) !important;
+  border-color: var(--tf-gold) !important;
+  color: var(--tf-brown) !important;
+}
+.product-card .card-body .btn-warning:hover {
+  background: #DB9C2F !important;
+  border-color: #DB9C2F !important;
+}
+/* borrar */
+.product-card .card-body .btn-outline-danger {
+  background: #fff !important;
+  border-color: var(--tf-red-line) !important;
+  color: var(--tf-red) !important;
+}
+.product-card .card-body .btn-outline-danger:hover {
+  background: var(--tf-red) !important;
+  border-color: var(--tf-red) !important;
+  color: #fff !important;
+}
+
+/* ══════════════════════════════════════════════
+   TIENDA PÚBLICA — mismas proporciones que el panel
+   (reemplaza los bloques de .tf-prod-card de v1/v2)
+   ══════════════════════════════════════════════ */
+
+.tf-prod-card {
+  background: var(--tf-white);
+  border: 1px solid var(--tf-card-line);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(46,27,18,.05), 0 6px 16px rgba(46,27,18,.06);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow .22s, transform .22s;
+}
+.tf-prod-card:hover {
+  box-shadow: 0 2px 4px rgba(46,27,18,.06), 0 12px 28px rgba(46,27,18,.11);
+  transform: translateY(-2px);
+  color: inherit;
+}
+/* foto a sangre, cuadrada */
+.tf-prod-card .prod-img-wrap {
+  margin: 0;
+  border-radius: 0;
+  aspect-ratio: 1 / 1;
+  background: var(--tf-stripe-a);
+}
+.tf-prod-placeholder {
+  border-radius: 0;
+  background: repeating-linear-gradient(135deg,
+    var(--tf-stripe-a) 0 14px, var(--tf-stripe-b) 14px 28px);
+  color: #C3B48D;
+}
+.tf-prod-card .badge-oferta { top: 10px; left: 10px; }
+
+/* cuerpo */
+.tf-prod-card .prod-info {
+  padding: 14px 14px 16px !important;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.tf-prod-card .prod-nombre {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 15px !important;
+  line-height: 1.15;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  color: var(--tf-brown);
+  margin-bottom: 0 !important;
+  text-wrap: pretty;
+}
+/* descripción (div inline en tienda.html) */
+.tf-prod-card .prod-info > div[style*="font-size:.7rem"] {
+  font-size: 11.5px !important;
+  line-height: 1.45;
+  color: var(--tf-txt-muted) !important;
+  margin: 6px 0 0 !important;
+}
+/* precio dominante */
+.tf-prod-card .prod-precio {
+  font-family: 'Oswald', sans-serif;
+  font-size: 30px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  color: var(--tf-gold);
+  display: block;
+  margin-top: 16px;
+}
+.tf-prod-card .prod-precio-tachado {
+  font-size: 13px;
+  color: var(--tf-txt-strike);
+  text-decoration: line-through;
+  margin: 16px 0 0;
+  display: block;
+}
+/* si hay tachado, el precio grande va pegado abajo */
+.tf-prod-card .prod-precio-tachado + .prod-precio { margin-top: 2px; }
+.tf-prod-card .prod-unidad {
+  display: block;
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--tf-txt-unit);
+  margin-top: 9px;
+}
+
+/* ── 10. Foco accesible ── */
+.product-card a:focus-visible,
+.product-card button:focus-visible {
+  outline: 2px solid var(--tf-gold);
+  outline-offset: 2px;
+}
